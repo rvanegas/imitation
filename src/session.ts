@@ -34,7 +34,9 @@ export function acceptInvite(
     imitationFirst: Math.random() < 0.5,
     timeoutHandle: setTimeout(() => onTimeout(session), SESSION_TIMEOUT_MS),
     transcript: [],
-    pendingResponder: null,
+    pendingResponder: initiator,
+    firstSender: initiator,
+    scores: { user1: 0, user2: 0 },
   };
 
   sessions.set(session.id, session);
@@ -61,6 +63,12 @@ export function addToTranscript(session: GameSession, role: SenderRole, content:
 export function touchSession(session: GameSession, onTimeout: (session: GameSession) => void): void {
   clearTimeout(session.timeoutHandle);
   session.timeoutHandle = setTimeout(() => onTimeout(session), SESSION_TIMEOUT_MS);
+}
+
+export function reshuffle(session: GameSession): void {
+  session.imitationFirst = Math.random() < 0.5;
+  session.firstSender = session.firstSender === session.user1 ? session.user2 : session.user1;
+  session.pendingResponder = session.firstSender;
 }
 
 export function endSession(session: GameSession): void {

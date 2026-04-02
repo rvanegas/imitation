@@ -15,6 +15,8 @@ export interface GameSession {
   timeoutHandle: ReturnType<typeof setTimeout>;
   transcript: TranscriptEntry[];  // interleaved actual messages and model predictions
   pendingResponder: UserId | null;
+  firstSender: UserId;
+  scores: { user1: number; user2: number };
 }
 
 export interface MessagePair {

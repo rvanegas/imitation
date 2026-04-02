@@ -31,8 +31,8 @@ bot.start(async (ctx) => {
       await ctx.reply('Invalid or expired invite link.');
       return;
     }
-    await bot.telegram.sendMessage(s.user1, 'Game started!');
-    await bot.telegram.sendMessage(s.user2, 'Game started!');
+    await bot.telegram.sendMessage(s.user1, 'Game started! You send the first message.');
+    await bot.telegram.sendMessage(s.user2, 'Game started! Your partner sends the first message.');
   }
 });
 
@@ -45,6 +45,56 @@ bot.command('stop', async (ctx) => {
   }
   await deliverReveal(bot, s);
   session.endSession(s);
+});
+
+bot.command('human', async (ctx) => {
+  const userId = ctx.from.id;
+  const s = session.getSessionForUser(userId);
+  if (!s) {
+    await ctx.reply('No active session.');
+    return;
+  }
+
+  if (s.pendingResponder !== userId) {
+    await ctx.reply('It is not your turn to guess, or no message to guess on.');
+    return;
+  }
+
+  const args = ctx.message.text.split(/\s+/);
+  const guess = args[1]?.toUpperCase();
+  if (guess !== 'A' && guess !== 'B') {
+    await ctx.reply('Usage: /human A  or  /human B');
+    return;
+  }
+
+  // imitationFirst=true → A=model, B=human; false → A=human, B=model
+  const humanIsA = !s.imitationFirst;
+  const correct = (guess === 'A') === humanIsA;
+
+  const role = userId === s.user1 ? 'user1' : 'user2';
+  s.scores[role] += correct ? 1 : -1;
+
+  const reveal = s.imitationFirst
+    ? 'A was the model, B was the human.'
+    : 'A was the human, B was the model.';
+  const verdict = correct ? 'Correct! +1' : 'Wrong! -1';
+
+  const partnerId = session.getPartner(s, userId);
+  const partnerRole = partnerId === s.user1 ? 'user1' : 'user2';
+
+  const myScore = s.scores[role];
+  const partnerScore = s.scores[partnerRole];
+
+  session.reshuffle(s);
+
+  const youGoFirst = s.firstSender === userId;
+  await ctx.reply(
+    `${verdict} ${reveal}\nYour score: ${myScore} | Partner's score: ${partnerScore}\n\n${youGoFirst ? 'Your turn to send the first message.' : 'Your partner sends the first message.'}`
+  );
+  await bot.telegram.sendMessage(
+    partnerId,
+    `Your partner guessed ${correct ? 'correctly' : 'incorrectly'}. ${reveal}\nYour score: ${partnerScore} | Partner's score: ${myScore}\n\n${youGoFirst ? 'Your partner sends the first message.' : 'Your turn to send the first message.'}`
+  );
 });
 
 bot.on(message('text'), async (ctx) => {

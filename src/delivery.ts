@@ -27,8 +27,8 @@ export async function deliverToReceiver(
 
 export async function deliverReveal(bot: Telegraf, session: GameSession): Promise<void> {
   const reveal = session.imitationFirst
-    ? 'A was always the model. B was always human.'
-    : 'A was always human. B was always the model.';
+    ? 'A was always the AI. B was always human.'
+    : 'A was always human. B was always the AI.';
 
   await bot.telegram.sendMessage(session.user1, reveal);
   await bot.telegram.sendMessage(session.user2, reveal);
