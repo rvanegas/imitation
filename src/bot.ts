@@ -2,8 +2,8 @@ import { Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { GameSession } from './types';
 import * as session from './session';
-import { generateImitation } from './imitation';
-import { deliverMessages, deliverReveal } from './delivery';
+import { generatePrediction } from './imitation';
+import { deliverToSender, deliverToReceiver, deliverReveal } from './delivery';
 
 const { BOT_TOKEN } = process.env;
 if (!BOT_TOKEN) throw new Error('BOT_TOKEN is required in .env');
@@ -12,8 +12,8 @@ export const bot = new Telegraf(BOT_TOKEN);
 
 async function onTimeout(s: GameSession): Promise<void> {
   await deliverReveal(bot, s);
-  await bot.telegram.sendMessage(s.userA, 'Session timed out after 1 hour.');
-  await bot.telegram.sendMessage(s.userB, 'Session timed out after 1 hour.');
+  await bot.telegram.sendMessage(s.user1, 'Session timed out after 1 hour.');
+  await bot.telegram.sendMessage(s.user2, 'Session timed out after 1 hour.');
   session.endSession(s);
 }
 
@@ -31,8 +31,8 @@ bot.start(async (ctx) => {
       await ctx.reply('Invalid or expired invite link.');
       return;
     }
-    await bot.telegram.sendMessage(s.userA, 'Game started!');
-    await bot.telegram.sendMessage(s.userB, 'Game started!');
+    await bot.telegram.sendMessage(s.user1, 'Game started!');
+    await bot.telegram.sendMessage(s.user2, 'Game started!');
   }
 });
 
@@ -55,10 +55,23 @@ bot.on(message('text'), async (ctx) => {
     return;
   }
 
-  session.touchSession(s, onTimeout);
-  const partnerId = session.getPartner(s, userId);
-  const original = ctx.message.text;
-  const imitation = await generateImitation(original);
+  if (s.pendingResponder !== null && s.pendingResponder !== userId) {
+    await ctx.reply('Waiting for your partner to respond.');
+    return;
+  }
 
-  await deliverMessages(bot, partnerId, { original, imitation }, s.imitationFirst);
+  session.touchSession(s, onTimeout);
+
+  const senderRole = userId === s.user1 ? 'user1' : 'user2';
+  const partnerId = session.getPartner(s, userId);
+  const text = ctx.message.text;
+
+  const prediction = await generatePrediction(s.transcript, senderRole);
+
+  session.addToTranscript(s, senderRole, text);
+  session.addToTranscript(s, 'model', prediction);
+  s.pendingResponder = partnerId;
+
+  await deliverToSender(bot, userId, text, prediction);
+  await deliverToReceiver(bot, partnerId, { human: text, prediction }, s.imitationFirst);
 });

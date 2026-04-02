@@ -1,25 +1,35 @@
 import { Telegraf } from 'telegraf';
-import { GameSession, PairedMessage } from './types';
+import { GameSession, MessagePair } from './types';
 
-export async function deliverMessages(
+export async function deliverToSender(
   bot: Telegraf,
-  recipientId: number,
-  messages: PairedMessage,
+  senderId: number,
+  text: string,
+  prediction: string
+): Promise<void> {
+  await bot.telegram.sendMessage(senderId, `You: ${text}`);
+  await bot.telegram.sendMessage(senderId, `Model: ${prediction}`);
+}
+
+export async function deliverToReceiver(
+  bot: Telegraf,
+  receiverId: number,
+  pair: MessagePair,
   imitationFirst: boolean
 ): Promise<void> {
-  const [first, second] = imitationFirst
-    ? [messages.imitation, messages.original]
-    : [messages.original, messages.imitation];
+  const [msgA, msgB] = imitationFirst
+    ? [pair.prediction, pair.human]
+    : [pair.human, pair.prediction];
 
-  await bot.telegram.sendMessage(recipientId, `Message 1: ${first}`);
-  await bot.telegram.sendMessage(recipientId, `Message 2: ${second}`);
+  await bot.telegram.sendMessage(receiverId, `A: ${msgA}`);
+  await bot.telegram.sendMessage(receiverId, `B: ${msgB}`);
 }
 
 export async function deliverReveal(bot: Telegraf, session: GameSession): Promise<void> {
   const reveal = session.imitationFirst
-    ? 'Message 1 was always AI. Message 2 was always human.'
-    : 'Message 1 was always human. Message 2 was always AI.';
+    ? 'A was always the model. B was always human.'
+    : 'A was always human. B was always the model.';
 
-  await bot.telegram.sendMessage(session.userA, reveal);
-  await bot.telegram.sendMessage(session.userB, reveal);
+  await bot.telegram.sendMessage(session.user1, reveal);
+  await bot.telegram.sendMessage(session.user2, reveal);
 }

@@ -1,4 +1,4 @@
-import { GameSession, UserId } from './types';
+import { GameSession, SenderRole, UserId } from './types';
 
 const pendingSessions = new Map<string, UserId>();
 const sessions = new Map<string, GameSession>();
@@ -28,11 +28,13 @@ export function acceptInvite(
 
   const session: GameSession = {
     id: token,
-    userA: initiator,
-    userB: userId,
+    user1: initiator,
+    user2: userId,
     status: 'active',
     imitationFirst: Math.random() < 0.5,
     timeoutHandle: setTimeout(() => onTimeout(session), SESSION_TIMEOUT_MS),
+    transcript: [],
+    pendingResponder: null,
   };
 
   sessions.set(session.id, session);
@@ -49,7 +51,11 @@ export function getSessionForUser(userId: UserId): GameSession | undefined {
 }
 
 export function getPartner(session: GameSession, userId: UserId): UserId {
-  return userId === session.userA ? session.userB : session.userA;
+  return userId === session.user1 ? session.user2 : session.user1;
+}
+
+export function addToTranscript(session: GameSession, role: SenderRole, content: string): void {
+  session.transcript.push({ role, content });
 }
 
 export function touchSession(session: GameSession, onTimeout: (session: GameSession) => void): void {
@@ -59,7 +65,7 @@ export function touchSession(session: GameSession, onTimeout: (session: GameSess
 
 export function endSession(session: GameSession): void {
   clearTimeout(session.timeoutHandle);
-  userToSession.delete(session.userA);
-  userToSession.delete(session.userB);
+  userToSession.delete(session.user1);
+  userToSession.delete(session.user2);
   sessions.delete(session.id);
 }
