@@ -36,26 +36,33 @@ export async function generatePrediction(
   senderRole: 'user1' | 'user2',
   priorMessages: string[]
 ): Promise<string> {
-  type AnthropicRole = 'user' | 'assistant';
-  const messages: { role: AnthropicRole; content: string }[] = [];
+  let prompt = '';
 
-  for (const entry of transcript) {
-    if (entry.role === 'model') {
-      messages.push({ role: 'assistant', content: entry.content });
-    } else {
-      const label = entry.role === 'user1' ? '[User 1]' : '[User 2]';
-      messages.push({ role: 'user', content: `${label}: ${entry.content}` });
+  if (transcript.length > 0) {
+    // Track the last human role so we can label model predictions correctly.
+    let lastHumanRole: 'user1' | 'user2' | null = null;
+    const lines: string[] = [];
+    for (const entry of transcript) {
+      if (entry.role === 'model') {
+        const imitationOf = lastHumanRole === 'user1' ? '[User 1 imitation]' : '[User 2 imitation]';
+        lines.push(`${imitationOf}: ${entry.content}`);
+      } else {
+        lastHumanRole = entry.role;
+        const label = entry.role === 'user1' ? '[User 1]' : '[User 2]';
+        lines.push(`${label}: ${entry.content}`);
+      }
     }
+    prompt = `Conversation so far:\n${lines.join('\n')}\n\n`;
   }
 
   const label = senderRole === 'user1' ? '[User 1]' : '[User 2]';
-  messages.push({ role: 'user', content: `What would ${label} say next?` });
+  prompt += `What would ${label} say next?`;
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1024,
     system: buildSystemPrompt(priorMessages),
-    messages,
+    messages: [{ role: 'user', content: prompt }],
   });
 
   const block = response.content[0];
