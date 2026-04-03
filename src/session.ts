@@ -3,6 +3,8 @@ import { GameSession, SenderRole, UserId } from './types';
 const pendingSessions = new Map<string, UserId>();
 const sessions = new Map<string, GameSession>();
 const userToSession = new Map<UserId, string>();
+// Maps a stable spectator token (prefixed "spec_") to a session id.
+const spectatorTokens = new Map<string, string>();
 
 const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 
@@ -37,12 +39,30 @@ export function acceptInvite(
     pendingResponder: initiator,
     firstSender: initiator,
     scores: { user1: 0, user2: 0 },
+    spectators: [],
   };
 
   sessions.set(session.id, session);
   userToSession.set(initiator, session.id);
   userToSession.set(userId, session.id);
 
+  return session;
+}
+
+export function createSpectatorInvite(session: GameSession): string {
+  const token = `spec_${session.id}`;
+  spectatorTokens.set(token, session.id);
+  return token;
+}
+
+export function addSpectator(token: string, userId: UserId): GameSession | null {
+  const sessionId = spectatorTokens.get(token);
+  if (sessionId === undefined) return null;
+  const session = sessions.get(sessionId);
+  if (!session) return null;
+  if (!session.spectators.includes(userId)) {
+    session.spectators.push(userId);
+  }
   return session;
 }
 
@@ -76,4 +96,5 @@ export function endSession(session: GameSession): void {
   userToSession.delete(session.user1);
   userToSession.delete(session.user2);
   sessions.delete(session.id);
+  spectatorTokens.delete(`spec_${session.id}`);
 }

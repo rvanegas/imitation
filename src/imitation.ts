@@ -12,7 +12,13 @@ Rules:
 - Match the specified user's tone, style, and length exactly.
 - Write only the predicted message. No explanation, no prefix.`;
 
-function buildSystemPrompt(priorMessages: string[]): string {
+function buildSystemPrompt(priorMessages: string[], isOpener: boolean, selfFollow: boolean): string {
+  const openerGuidance = isOpener
+    ? '\nThe conversation has not started yet — you are generating an opening message. It must stand alone with no prior context. Default to a very short, casual opener (one to five words): "hi", "hey", "yo", "sup", or similar. Do not ask a question or reference anything.'
+    : selfFollow
+    ? '\nThis user last spoke before an interruption (a scoring moment in the game). They are now sending their next message. The prior conversation is still context, but they are not replying to their own last message — predict something that moves the conversation forward naturally.'
+    : '';
+
   if (priorMessages.length > 0) {
     const examples = priorMessages.map((m, i) => `  ${i + 1}. ${m}`).join('\n');
     return `${BASE_PROMPT}
@@ -21,8 +27,8 @@ The following are real messages this user has sent in previous sessions. Use the
 
 If this user makes spelling or grammatical mistakes, reproduce errors at a similar rate and of a similar type in your prediction. Do not silently correct their writing.
 
-Do NOT copy or paraphrase these messages. Each was a response to a specific context you don't have. Treat them as writing samples, not as things to say.
-
+Do NOT reproduce these messages verbatim, unless the message is a very short, context-free phrase (e.g. "hi", "yes", "ok") where repetition is natural. For anything longer or more specific, treat it as a writing sample only — never copy or closely paraphrase it, since each was written in response to a context you do not have.
+${openerGuidance}
 ${examples}`;
   }
 
@@ -58,10 +64,15 @@ export async function generatePrediction(
   const label = senderRole === 'user1' ? '[User 1]' : '[User 2]';
   prompt += `What would ${label} say next?`;
 
+  const realMessages = transcript.filter(e => e.role !== 'model');
+  const isOpener = realMessages.length === 0;
+  const lastRealRole = realMessages.at(-1)?.role ?? null;
+  const selfFollow = !isOpener && lastRealRole === senderRole;
+
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1024,
-    system: buildSystemPrompt(priorMessages),
+    system: buildSystemPrompt(priorMessages, isOpener, selfFollow),
     messages: [{ role: 'user', content: prompt }],
   });
 

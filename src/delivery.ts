@@ -1,5 +1,5 @@
 import { Telegraf } from 'telegraf';
-import { GameSession, MessagePair } from './types';
+import { GameSession, MessagePair, UserId } from './types';
 
 export async function deliverToSender(
   bot: Telegraf,
@@ -23,6 +23,38 @@ export async function deliverToReceiver(
 
   await bot.telegram.sendMessage(receiverId, `A: ${msgA}`);
   await bot.telegram.sendMessage(receiverId, `B: ${msgB}`);
+}
+
+export async function deliverToSpectators(
+  bot: Telegraf,
+  session: GameSession,
+  senderLabel: string,
+  human: string,
+  prediction: string
+): Promise<void> {
+  if (session.spectators.length === 0) return;
+  const text = `${senderLabel}: ${human}\n${senderLabel} (imitation): ${prediction}`;
+  await Promise.all(
+    session.spectators.map((id: UserId) => bot.telegram.sendMessage(id, text))
+  );
+}
+
+export async function deliverRoundResultToSpectators(
+  bot: Telegraf,
+  session: GameSession,
+  guesserLabel: string,
+  correct: boolean,
+  reveal: string,
+  scores: { user1: number; user2: number }
+): Promise<void> {
+  if (session.spectators.length === 0) return;
+  const verdict = correct ? 'correctly' : 'incorrectly';
+  const text =
+    `${guesserLabel} guessed ${verdict}. ${reveal}\n` +
+    `Score — User 1: ${scores.user1} | User 2: ${scores.user2}`;
+  await Promise.all(
+    session.spectators.map((id: UserId) => bot.telegram.sendMessage(id, text))
+  );
 }
 
 export async function deliverReveal(bot: Telegraf, session: GameSession): Promise<void> {

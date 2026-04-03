@@ -4,7 +4,7 @@ import { GameSession } from './types';
 import * as session from './session';
 import { generatePrediction } from './imitation';
 import { getProfile, appendMessage } from './userProfiles';
-import { deliverToSender, deliverToReceiver } from './delivery';
+import { deliverToSender, deliverToReceiver, deliverToSpectators, deliverRoundResultToSpectators } from './delivery';
 
 const { BOT_TOKEN } = process.env;
 if (!BOT_TOKEN) throw new Error('BOT_TOKEN is required in .env');
@@ -39,6 +39,13 @@ bot.start(async (ctx) => {
     const token = session.createInvite(userId);
     const link = `https://t.me/${ctx.botInfo.username}?start=${token}`;
     await ctx.reply(`Share this invite link with your partner:\n${link}`);
+  } else if (payload.startsWith('spec_')) {
+    const s = session.addSpectator(payload, userId);
+    if (!s) {
+      await ctx.reply('Invalid or expired spectator link.');
+      return;
+    }
+    await ctx.reply('You are now watching this game as a spectator.');
   } else {
     const s = session.acceptInvite(payload, userId, onTimeout);
     if (!s) {
@@ -48,6 +55,18 @@ bot.start(async (ctx) => {
     await bot.telegram.sendMessage(s.user1, 'Game started! You send the first message.');
     await bot.telegram.sendMessage(s.user2, 'Game started! Your partner sends the first message.');
   }
+});
+
+bot.command('invite', async (ctx) => {
+  const userId = ctx.from.id;
+  const s = session.getSessionForUser(userId);
+  if (!s) {
+    await ctx.reply('No active session.');
+    return;
+  }
+  const token = session.createSpectatorInvite(s);
+  const link = `https://t.me/${ctx.botInfo.username}?start=${token}`;
+  await ctx.reply(`Share this spectator link — anyone can click it to watch:\n${link}`);
 });
 
 bot.command('stop', async (ctx) => {
@@ -98,6 +117,9 @@ bot.command('human', async (ctx) => {
   const myScore = s.scores[role];
   const partnerScore = s.scores[partnerRole];
 
+  const guesserLabel = role === 'user1' ? 'User 1' : 'User 2';
+  await deliverRoundResultToSpectators(bot, s, guesserLabel, correct, reveal, s.scores);
+
   session.reshuffle(s);
 
   const youGoFirst = s.firstSender === userId;
@@ -115,6 +137,11 @@ bot.on(message('text'), async (ctx) => {
   const s = session.getSessionForUser(userId);
   if (!s) {
     await ctx.reply('Use /start to create an invite link.');
+    return;
+  }
+
+  if (/^human[/\s]*[ab]\b/i.test(ctx.message.text.trim())) {
+    await ctx.reply('Looks like you meant to guess. Use /human A or /human B.');
     return;
   }
 
@@ -137,6 +164,8 @@ bot.on(message('text'), async (ctx) => {
   session.addToTranscript(s, 'model', prediction);
   s.pendingResponder = partnerId;
 
+  const senderLabel = senderRole === 'user1' ? 'User 1' : 'User 2';
   await deliverToSender(bot, userId, text, prediction);
   await deliverToReceiver(bot, partnerId, { human: text, prediction }, s.imitationFirst);
+  await deliverToSpectators(bot, s, senderLabel, text, prediction);
 });

@@ -17,6 +17,7 @@ export interface GameSession {
   pendingResponder: UserId | null;
   firstSender: UserId;
   scores: { user1: number; user2: number };
+  spectators: UserId[];
 }
 
 export interface MessagePair {
