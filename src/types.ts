@@ -23,3 +23,11 @@ export interface MessagePair {
   human: string;      // sender's actual message
   prediction: string; // model's blind prediction of what sender would write
 }
+
+export interface UserProfile {
+  messages: string[];
+}
+
+export interface UserProfileStore {
+  [userId: string]: UserProfile;
+}

@@ -3,15 +3,29 @@ import { message } from 'telegraf/filters';
 import { GameSession } from './types';
 import * as session from './session';
 import { generatePrediction } from './imitation';
-import { deliverToSender, deliverToReceiver, deliverReveal } from './delivery';
+import { getProfile, appendMessage } from './userProfiles';
+import { deliverToSender, deliverToReceiver } from './delivery';
 
 const { BOT_TOKEN } = process.env;
 if (!BOT_TOKEN) throw new Error('BOT_TOKEN is required in .env');
 
 export const bot = new Telegraf(BOT_TOKEN);
 
+bot.use((ctx, next) => {
+  if (ctx.message && 'text' in ctx.message) {
+    const cmdEntity = ctx.message.entities?.find(
+      e => e.type === 'bot_command' && e.offset === 0
+    );
+    if (cmdEntity) {
+      const t = ctx.message.text;
+      (ctx.message as { text: string }).text =
+        t.slice(0, cmdEntity.length).toLowerCase() + t.slice(cmdEntity.length);
+    }
+  }
+  return next();
+});
+
 async function onTimeout(s: GameSession): Promise<void> {
-  await deliverReveal(bot, s);
   await bot.telegram.sendMessage(s.user1, 'Session timed out after 1 hour.');
   await bot.telegram.sendMessage(s.user2, 'Session timed out after 1 hour.');
   session.endSession(s);
@@ -43,7 +57,6 @@ bot.command('stop', async (ctx) => {
     await ctx.reply('No active session.');
     return;
   }
-  await deliverReveal(bot, s);
   session.endSession(s);
 });
 
@@ -116,7 +129,9 @@ bot.on(message('text'), async (ctx) => {
   const partnerId = session.getPartner(s, userId);
   const text = ctx.message.text;
 
-  const prediction = await generatePrediction(s.transcript, senderRole);
+  const profile = getProfile(userId, partnerId);
+  const prediction = await generatePrediction(s.transcript, senderRole, profile.messages);
+  appendMessage(userId, partnerId, text);
 
   session.addToTranscript(s, senderRole, text);
   session.addToTranscript(s, 'model', prediction);
