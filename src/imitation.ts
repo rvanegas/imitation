@@ -40,7 +40,8 @@ You have no prior messages from this user. Default to a very short, casual opene
 export async function generatePrediction(
   transcript: TranscriptEntry[],
   senderRole: 'user1' | 'user2',
-  priorMessages: string[]
+  priorMessages: string[],
+  questionContext?: string
 ): Promise<string> {
   let prompt = '';
 
@@ -62,12 +63,16 @@ export async function generatePrediction(
   }
 
   const label = senderRole === 'user1' ? '[User 1]' : '[User 2]';
-  prompt += `What would ${label} say next?`;
+  if (questionContext) {
+    prompt += `The interrogator just asked: "${questionContext}"\n\nWhat would ${label} say in response?`;
+  } else {
+    prompt += `What would ${label} say next?`;
+  }
 
   const realMessages = transcript.filter(e => e.role !== 'model');
-  const isOpener = realMessages.length === 0;
+  const isOpener = !questionContext && realMessages.length === 0;
   const lastRealRole = realMessages.at(-1)?.role ?? null;
-  const selfFollow = !isOpener && lastRealRole === senderRole;
+  const selfFollow = !isOpener && !questionContext && lastRealRole === senderRole;
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',

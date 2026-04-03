@@ -11,11 +11,15 @@ export interface GameSession {
   user1: UserId;
   user2: UserId;
   status: 'active';
+  variation: 'symmetric' | 'original';
   imitationFirst: boolean;
   timeoutHandle: ReturnType<typeof setTimeout>;
   transcript: TranscriptEntry[];  // interleaved actual messages and model predictions
+  // symmetric: pending sender/guesser; original: null=interrogator's turn, witnessId=answer phase
   pendingResponder: UserId | null;
-  firstSender: UserId;
+  firstSender: UserId;            // symmetric only: who sends first in a round
+  interrogator: UserId;           // original only: who is asking/guessing this round
+  pendingPrediction: string | null; // original only: AI prediction stored between question and answer
   scores: { user1: number; user2: number };
   spectators: UserId[];
 }
