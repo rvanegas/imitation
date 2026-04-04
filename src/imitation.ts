@@ -54,7 +54,7 @@ export async function generatePrediction(
   priorMessages: string[],
   questionContext?: string,
   assessments: string[] = [],
-): Promise<string> {
+): Promise<{ text: string; systemPrompt: string }> {
   let prompt = '';
 
   if (transcript.length > 0) {
@@ -88,17 +88,18 @@ export async function generatePrediction(
   const lastRealRole = realMessages.at(-1)?.role ?? null;
   const selfFollow = !isOpener && !questionContext && lastRealRole === senderRole;
 
+  const systemPrompt = buildSystemPrompt(priorMessages, isOpener, selfFollow, assessments);
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6';
   const response = await client.messages.create({
     model,
     max_tokens: 1024,
-    system: buildSystemPrompt(priorMessages, isOpener, selfFollow, assessments),
+    system: systemPrompt,
     messages: [{ role: 'user', content: prompt }],
   });
 
   const block = response.content[0];
   if (block.type !== 'text') throw new Error('Unexpected response type from Claude');
-  return block.text.trim();
+  return { text: block.text.trim(), systemPrompt };
 }
 
 export async function generateAssessment(
@@ -132,7 +133,8 @@ export async function generateAssessment(
     `The human actually wrote: "${humanMessage}"\n` +
     `Your imitation was: "${aiPrediction}"\n\n` +
     `${outcome}\n\n` +
-    `In 2-3 sentences, assess what worked or didn't work in your imitation, and what you should do differently next time.`;
+    `In 2-3 sentences, assess what worked or didn't work in your imitation, and what you should do differently next time. ` +
+    `Write the lesson in abstract terms (style, length, tone, vocabulary, punctuation) — do not reference the specific messages or conversation, since the assessment will be read later without that context.`;
 
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6';
   const response = await client.messages.create({

@@ -17,6 +17,11 @@ export function createInvite(userId: UserId, variation: 'symmetric' | 'original'
   return token;
 }
 
+export function isOwnInvite(token: string, userId: UserId): boolean {
+  const entry = pendingSessions.get(token);
+  return entry !== undefined && entry.userId === userId;
+}
+
 export function acceptInvite(
   token: string,
   userId: UserId,
@@ -25,8 +30,10 @@ export function acceptInvite(
   const entry = pendingSessions.get(token);
   if (entry === undefined) return null;
 
-  pendingSessions.delete(token);
   const { userId: initiator, variation } = entry;
+  if (userId === initiator) return null;
+
+  pendingSessions.delete(token);
 
   const session: GameSession = {
     id: token,

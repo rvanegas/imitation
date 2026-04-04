@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { GameSession, TranscriptEntry } from './types';
+import { getAssessments } from './userProfiles';
 
 const LOG_DIR = path.join(process.cwd(), 'logs');
 
@@ -24,23 +25,39 @@ function formatTranscript(transcript: TranscriptEntry[]): string {
   return lines.join('\n');
 }
 
-export function logSession(session: GameSession): void {
+function writeLog(session: GameSession, ended: boolean): void {
   if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
 
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const filename = `session-${session.id}-${timestamp}.txt`;
-  const filepath = path.join(LOG_DIR, filename);
+  const filepath = path.join(LOG_DIR, `session-${session.id}.txt`);
 
-  const header = [
+  const headerLines = [
     `Session: ${session.id}`,
     `Variation: ${session.variation}`,
     `User 1: ${session.user1}`,
     `User 2: ${session.user2}`,
-    `Ended: ${new Date().toISOString()}`,
-    '',
-    '--- Transcript (as sent to model) ---',
-    '',
-  ].join('\n');
+  ];
+  if (ended) headerLines.push(`Ended: ${new Date().toISOString()}`);
 
-  fs.writeFileSync(filepath, header + formatTranscript(session.transcript));
+  const assessments = getAssessments();
+  headerLines.push('', '--- Assessments ---', '');
+  if (assessments.length === 0) {
+    headerLines.push('(none)');
+  } else {
+    assessments.forEach((a, i) => headerLines.push(`${i + 1}. ${a}`));
+  }
+
+  headerLines.push('', '--- System Prompt ---', '');
+  headerLines.push(session.lastSystemPrompt ?? '(not yet generated)');
+
+  headerLines.push('', '--- Transcript (as sent to model) ---', '');
+
+  fs.writeFileSync(filepath, headerLines.join('\n') + formatTranscript(session.transcript));
+}
+
+export function updateLog(session: GameSession): void {
+  writeLog(session, false);
+}
+
+export function logSession(session: GameSession): void {
+  writeLog(session, true);
 }

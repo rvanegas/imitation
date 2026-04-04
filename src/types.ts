@@ -29,6 +29,7 @@ export interface GameSession {
   totalTurns: number;                  // original: sum of turns across all rounds
   roundCount: number;                  // original: number of rounds completed
   spectators: UserId[];
+  lastSystemPrompt?: string;
 }
 
 export interface MessagePair {

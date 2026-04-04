@@ -5,7 +5,7 @@ import * as session from './session';
 import { generatePrediction, generateAssessment } from './imitation';
 import { getProfile, appendMessage, getName, getOrAssignName, setName, isValidName, getUserIdByName, appendAssessment, getAssessments } from './userProfiles';
 import { deliverToSender, deliverToReceiver, deliverToSpectators, deliverRoundResultToSpectators } from './delivery';
-import { logSession } from './log';
+import { logSession, updateLog } from './log';
 
 const { BOT_TOKEN } = process.env;
 if (!BOT_TOKEN) throw new Error('BOT_TOKEN is required in .env');
@@ -56,6 +56,8 @@ bot.start(async (ctx) => {
       }
     );
   } else {
+    if (session.isOwnInvite(payload, userId)) return;
+
     const joined = session.acceptInvite(payload, userId, onTimeout);
     if (joined) {
       getOrAssignName(userId);
@@ -300,6 +302,7 @@ bot.command('human', async (ctx) => {
     const scoreStr = `Humans: ${s.teamScores.humans} | Model: ${s.teamScores.model} | Avg turns to guess: ${avgTurns}`;
 
     s.transcript.push({ role: 'guess', content: `${guess} (${reveal})`, correct, guesser: role as 'user1' | 'user2' });
+    updateLog(s);
 
     const _modelEntry1 = s.transcript[s.transcript.length - 2];
     const _humanEntry1 = s.transcript[s.transcript.length - 3];
@@ -335,6 +338,7 @@ bot.command('human', async (ctx) => {
     const verdict = correct ? 'Correct! +1' : 'Wrong! -1';
 
     s.transcript.push({ role: 'guess', content: `${guess} (${reveal})`, correct, guesser: role as 'user1' | 'user2' });
+    updateLog(s);
 
     const _modelEntry2 = s.transcript[s.transcript.length - 2];
     const _humanEntry2 = s.transcript[s.transcript.length - 3];
@@ -396,6 +400,7 @@ bot.on(message('text'), async (ctx) => {
 
       session.addToTranscript(s, witnessRole, text);
       session.addToTranscript(s, 'model', prediction);
+      updateLog(s);
       appendMessage(witnessId, s.interrogator, text);
       s.pendingPrediction = null;
       s.pendingResponder = null; // back to interrogator's turn
@@ -417,12 +422,15 @@ bot.on(message('text'), async (ctx) => {
 
     const witnessRole = witnessId === s.user1 ? 'user1' : 'user2';
     const profile = getProfile(witnessId, s.interrogator);
-    const prediction = stripEmoji(await generatePrediction(s.transcript, witnessRole, profile.messages, text, getAssessments()));
+    const { text: predText, systemPrompt: sp1 } = await generatePrediction(s.transcript, witnessRole, profile.messages, text, getAssessments());
+    const prediction = stripEmoji(predText);
     s.pendingPrediction = prediction;
+    s.lastSystemPrompt = sp1;
     s.pendingResponder = witnessId;
 
     const interrogatorRole = s.interrogator === s.user1 ? 'user1' : 'user2';
     session.addToTranscript(s, interrogatorRole, text);
+    updateLog(s);
     appendMessage(s.interrogator, witnessId, text);
 
     await bot.telegram.sendMessage(witnessId, text);
@@ -448,11 +456,14 @@ bot.on(message('text'), async (ctx) => {
   const partnerId = session.getPartner(s, userId);
 
   const profile = getProfile(userId, partnerId);
-  const prediction = stripEmoji(await generatePrediction(s.transcript, senderRole, profile.messages, undefined, getAssessments()));
+  const { text: predText2, systemPrompt: sp2 } = await generatePrediction(s.transcript, senderRole, profile.messages, undefined, getAssessments());
+  const prediction = stripEmoji(predText2);
+  s.lastSystemPrompt = sp2;
   appendMessage(userId, partnerId, text);
 
   session.addToTranscript(s, senderRole, text);
   session.addToTranscript(s, 'model', prediction);
+  updateLog(s);
   s.pendingResponder = partnerId;
 
   const senderLabel = getName(userId)!;
