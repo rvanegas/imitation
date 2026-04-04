@@ -102,6 +102,7 @@ export async function generatePrediction(
 }
 
 export async function generateAssessment(
+  transcript: TranscriptEntry[],
   humanMessage: string,
   aiPrediction: string,
   correct: boolean,
@@ -109,8 +110,25 @@ export async function generateAssessment(
   const outcome = correct
     ? 'The human correctly identified the AI — the imitation did not fool them.'
     : 'The human was fooled — they thought the AI message was human.';
+
+  let contextSection = '';
+  // transcript here is everything before the human message and model prediction
+  const priorEntries = transcript.filter(e => e.role !== 'guess');
+  if (priorEntries.length > 0) {
+    let lastHumanRole: 'user1' | 'user2' | null = null;
+    const lines = priorEntries.map(e => {
+      if (e.role === 'model') {
+        return `[${lastHumanRole === 'user1' ? 'User 1' : 'User 2'} imitation]: ${e.content}`;
+      }
+      if (e.role !== 'guess') lastHumanRole = e.role;
+      return `[${e.role === 'user1' ? 'User 1' : 'User 2'}]: ${e.content}`;
+    });
+    contextSection = `Conversation context available during prediction:\n${lines.join('\n')}\n\n`;
+  }
+
   const prompt =
     `You just attempted to imitate a human in a Turing Test.\n\n` +
+    `${contextSection}` +
     `The human actually wrote: "${humanMessage}"\n` +
     `Your imitation was: "${aiPrediction}"\n\n` +
     `${outcome}\n\n` +

@@ -304,8 +304,14 @@ bot.command('human', async (ctx) => {
     const _modelEntry1 = s.transcript[s.transcript.length - 2];
     const _humanEntry1 = s.transcript[s.transcript.length - 3];
     if (_modelEntry1?.role === 'model' && _humanEntry1) {
-      generateAssessment(_humanEntry1.content, _modelEntry1.content, correct)
-        .then(assessment => appendAssessment(assessment))
+      const _meta1 = {
+        sessionId: s.id,
+        guessNumber: s.transcript.filter(e => e.role === 'guess').length,
+        guesserId: userId,
+        correct,
+      };
+      generateAssessment(s.transcript.slice(0, -3), _humanEntry1.content, _modelEntry1.content, correct)
+        .then(assessment => appendAssessment(assessment, _meta1))
         .catch(() => {});
     }
 
@@ -333,8 +339,14 @@ bot.command('human', async (ctx) => {
     const _modelEntry2 = s.transcript[s.transcript.length - 2];
     const _humanEntry2 = s.transcript[s.transcript.length - 3];
     if (_modelEntry2?.role === 'model' && _humanEntry2) {
-      generateAssessment(_humanEntry2.content, _modelEntry2.content, correct)
-        .then(assessment => appendAssessment(assessment))
+      const _meta2 = {
+        sessionId: s.id,
+        guessNumber: s.transcript.filter(e => e.role === 'guess').length,
+        guesserId: userId,
+        correct,
+      };
+      generateAssessment(s.transcript.slice(0, -3), _humanEntry2.content, _modelEntry2.content, correct)
+        .then(assessment => appendAssessment(assessment, _meta2))
         .catch(() => {});
     }
 

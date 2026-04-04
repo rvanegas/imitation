@@ -58,21 +58,45 @@ export function setName(userId: UserId, name: string): void {
   saveStore(store);
 }
 
-export function appendAssessment(assessment: string): void {
+interface AssessmentRecord {
+  text: string;
+  sessionId: string;
+  guessNumber: number;
+  guesserId: UserId;
+  correct: boolean;
+  timestamp: string;
+}
+
+export function appendAssessment(
+  assessment: string,
+  meta: { sessionId: string; guessNumber: number; guesserId: UserId; correct: boolean }
+): void {
   const store = loadStore();
-  const list: string[] = (store as Record<string, any>)['__assessments']?.list ?? [];
-  list.push(assessment);
+  const list: AssessmentRecord[] = (store as Record<string, any>)['__assessments']?.list ?? [];
+  list.push({ text: assessment, timestamp: new Date().toISOString(), ...meta });
   (store as Record<string, any>)['__assessments'] = { list };
   saveStore(store);
 }
 
 export function getAssessments(): string[] {
-  return (loadStore() as Record<string, any>)['__assessments']?.list ?? [];
+  const list: AssessmentRecord[] = (loadStore() as Record<string, any>)['__assessments']?.list ?? [];
+  return list.map(r => r.text);
 }
 
 export function setAssessments(list: string[]): void {
   const store = loadStore();
-  (store as Record<string, any>)['__assessments'] = { list };
+  // Preserve existing records' metadata; replace only the text of compacted entries.
+  // Since compact produces a fresh distilled list with no 1:1 mapping to originals,
+  // store them as new records without session metadata.
+  const records: AssessmentRecord[] = list.map(text => ({
+    text,
+    sessionId: '',
+    guessNumber: 0,
+    guesserId: 0,
+    correct: false,
+    timestamp: new Date().toISOString(),
+  }));
+  (store as Record<string, any>)['__assessments'] = { list: records };
   saveStore(store);
 }
 
