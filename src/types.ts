@@ -21,6 +21,10 @@ export interface GameSession {
   interrogator: UserId;           // original only: who is asking/guessing this round
   pendingPrediction: string | null; // original only: AI prediction stored between question and answer
   scores: { user1: number; user2: number };
+  teamScores: { humans: number; model: number };  // original variation only
+  currentRoundTurns: number;          // original: Q&A exchanges in the current round
+  totalTurnsOnCorrectGuess: number;   // original: sum of turns for all correct-guess rounds
+  correctGuessCount: number;          // original: number of rounds humans guessed correctly
   spectators: UserId[];
 }
 

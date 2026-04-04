@@ -5,6 +5,7 @@ import * as session from './session';
 import { generatePrediction } from './imitation';
 import { getProfile, appendMessage } from './userProfiles';
 import { deliverToSender, deliverToReceiver, deliverToSpectators, deliverRoundResultToSpectators } from './delivery';
+import { logSession } from './log';
 
 const { BOT_TOKEN } = process.env;
 if (!BOT_TOKEN) throw new Error('BOT_TOKEN is required in .env');
@@ -28,6 +29,7 @@ bot.use((ctx, next) => {
 async function onTimeout(s: GameSession): Promise<void> {
   await bot.telegram.sendMessage(s.user1, 'Session timed out after 1 hour.');
   await bot.telegram.sendMessage(s.user2, 'Session timed out after 1 hour.');
+  logSession(s);
   session.endSession(s);
 }
 
@@ -101,6 +103,7 @@ bot.command('stop', async (ctx) => {
     await ctx.reply('No active session.');
     return;
   }
+  logSession(s);
   session.endSession(s);
 });
 
@@ -135,37 +138,51 @@ bot.command('human', async (ctx) => {
   const correct = (guess === 'A') === humanIsA;
 
   const role = userId === s.user1 ? 'user1' : 'user2';
-  s.scores[role] += correct ? 1 : -1;
+  const partnerId = session.getPartner(s, userId);
+  const partnerRole = partnerId === s.user1 ? 'user1' : 'user2';
 
   const reveal = s.imitationFirst
     ? 'A was the model, B was the human.'
     : 'A was the human, B was the model.';
-  const verdict = correct ? 'Correct! +1' : 'Wrong! -1';
-
-  const partnerId = session.getPartner(s, userId);
-  const partnerRole = partnerId === s.user1 ? 'user1' : 'user2';
-
-  const myScore = s.scores[role];
-  const partnerScore = s.scores[partnerRole];
 
   const guesserLabel = role === 'user1' ? 'User 1' : 'User 2';
-  await deliverRoundResultToSpectators(bot, s, guesserLabel, correct, reveal, s.scores);
-
-  session.reshuffle(s);
 
   if (s.variation === 'original') {
-    // After reshuffle, s.interrogator is now the old witness (= partnerId)
+    if (correct) {
+      s.teamScores.humans += 1;
+      s.totalTurnsOnCorrectGuess += s.currentRoundTurns;
+      s.correctGuessCount += 1;
+    } else {
+      s.teamScores.model += 1;
+    }
+    const verdict = correct ? 'Correct! Humans +1' : 'Wrong! Model +1';
+    const avgTurns = s.correctGuessCount > 0
+      ? (s.totalTurnsOnCorrectGuess / s.correctGuessCount).toFixed(1)
+      : '—';
+    const scoreStr = `Humans: ${s.teamScores.humans} | Model: ${s.teamScores.model} | Avg turns to correct guess: ${avgTurns}`;
+
+    await deliverRoundResultToSpectators(bot, s, guesserLabel, correct, reveal, s.scores, s.teamScores);
+    session.reshuffle(s);
+
     const youAreNewInterrogator = s.interrogator === userId;
     await ctx.reply(
-      `${verdict} ${reveal}\nYour score: ${myScore} | Partner's score: ${partnerScore}\n\n` +
-      (youAreNewInterrogator ? 'Your turn to interrogate.' : 'Your partner is the interrogator now.')
+      `${verdict} ${reveal}\n${scoreStr}\n\n` +
+      (youAreNewInterrogator ? 'Your turn to interrogate. Ask your first question.' : 'Your partner is the interrogator now. Wait for their first question.')
     );
     await bot.telegram.sendMessage(
       partnerId,
-      `Your partner guessed ${correct ? 'correctly' : 'incorrectly'}. ${reveal}\nYour score: ${partnerScore} | Partner's score: ${myScore}\n\n` +
-      (!youAreNewInterrogator ? 'Your turn to interrogate.' : 'Your partner is the interrogator now.')
+      `Your partner guessed ${correct ? 'correctly' : 'incorrectly'}. ${reveal}\n${scoreStr}\n\n` +
+      (!youAreNewInterrogator ? 'Your turn to interrogate. Ask your first question.' : 'Your partner is the interrogator now. Wait for their first question.')
     );
   } else {
+    s.scores[role] += correct ? 1 : -1;
+    const myScore = s.scores[role];
+    const partnerScore = s.scores[partnerRole];
+    const verdict = correct ? 'Correct! +1' : 'Wrong! -1';
+
+    await deliverRoundResultToSpectators(bot, s, guesserLabel, correct, reveal, s.scores);
+    session.reshuffle(s);
+
     const youGoFirst = s.firstSender === userId;
     await ctx.reply(
       `${verdict} ${reveal}\nYour score: ${myScore} | Partner's score: ${partnerScore}\n\n${youGoFirst ? 'Your turn to send the first message.' : 'Your partner sends the first message.'}`
@@ -211,10 +228,10 @@ bot.on(message('text'), async (ctx) => {
       appendMessage(witnessId, s.interrogator, text);
       s.pendingPrediction = null;
       s.pendingResponder = null; // back to interrogator's turn
+      s.currentRoundTurns += 1;
 
-      await ctx.reply('Response sent.');
+      await ctx.reply(`You: ${text}\nModel: ${prediction}`);
       await deliverToReceiver(bot, s.interrogator, { human: text, prediction }, s.imitationFirst);
-      await bot.telegram.sendMessage(s.interrogator, 'Ask another question, or use /human A or /human B to guess.');
       const witnessLabel = witnessRole === 'user1' ? 'User 1' : 'User 2';
       await deliverToSpectators(bot, s, witnessLabel, text, prediction);
       return;
@@ -237,8 +254,7 @@ bot.on(message('text'), async (ctx) => {
     session.addToTranscript(s, interrogatorRole, text);
     appendMessage(s.interrogator, witnessId, text);
 
-    await ctx.reply('Sent. Waiting for your partner\'s response.');
-    await bot.telegram.sendMessage(witnessId, `${text}\n\nSend your response.`);
+    await bot.telegram.sendMessage(witnessId, text);
 
     if (s.spectators.length > 0) {
       const interrogatorLabel = interrogatorRole === 'user1' ? 'User 1' : 'User 2';

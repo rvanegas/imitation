@@ -43,6 +43,10 @@ export function acceptInvite(
     interrogator: initiator,
     pendingPrediction: null,
     scores: { user1: 0, user2: 0 },
+    teamScores: { humans: 0, model: 0 },
+    currentRoundTurns: 0,
+    totalTurnsOnCorrectGuess: 0,
+    correctGuessCount: 0,
     spectators: [],
   };
 
@@ -95,6 +99,7 @@ export function reshuffle(session: GameSession): void {
     session.interrogator = session.interrogator === session.user1 ? session.user2 : session.user1;
     session.pendingResponder = null;
     session.pendingPrediction = null;
+    session.currentRoundTurns = 0;
   } else {
     session.firstSender = session.firstSender === session.user1 ? session.user2 : session.user1;
     session.pendingResponder = session.firstSender;
