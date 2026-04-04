@@ -3,7 +3,7 @@ import { message } from 'telegraf/filters';
 import { GameSession } from './types';
 import * as session from './session';
 import { generatePrediction } from './imitation';
-import { getProfile, appendMessage } from './userProfiles';
+import { getProfile, appendMessage, getName, setName, isValidName } from './userProfiles';
 import { deliverToSender, deliverToReceiver, deliverToSpectators, deliverRoundResultToSpectators } from './delivery';
 import { logSession } from './log';
 
@@ -58,7 +58,8 @@ bot.start(async (ctx) => {
   } else if (payload.startsWith('spec_')) {
     const s = session.addSpectator(payload, userId);
     if (!s) {
-      await ctx.reply('Invalid or expired spectator link.');
+      const isPlayer = !!session.getSessionForUser(userId);
+      await ctx.reply(isPlayer ? 'You are already a player in this game.' : 'Invalid or expired spectator link.');
       return;
     }
     const spectatorCount = s.spectators.length;
@@ -91,6 +92,16 @@ bot.action(/^var_(symmetric|original)$/, async (ctx) => {
   await ctx.editMessageText(`${label} selected.\n\nShare this invite link with your partner:\n${link}`);
 });
 
+bot.command('setname', async (ctx) => {
+  const name = ctx.message.text.split(/\s+/)[1] ?? '';
+  if (!isValidName(name)) {
+    await ctx.reply('Invalid name. Must start with a letter or underscore, contain only letters, digits, or underscores, and be 1–32 characters long.');
+    return;
+  }
+  setName(ctx.from.id, name);
+  await ctx.reply(`Name set to: ${name}`);
+});
+
 bot.command('invite', async (ctx) => {
   const userId = ctx.from.id;
   const s = session.getSessionForUser(userId);
@@ -105,14 +116,21 @@ bot.command('invite', async (ctx) => {
 
 bot.command('status', async (ctx) => {
   const userId = ctx.from.id;
-  const s = session.getSessionForUser(userId);
+  const s = session.getSessionForUser(userId) ?? session.getSessionForSpectator(userId);
   if (!s) {
     await ctx.reply('No active session.');
     return;
   }
+  const isSpectator = s.spectators.includes(userId);
 
   let turnLine: string;
-  if (s.variation === 'original') {
+  if (isSpectator) {
+    if (s.variation === 'original') {
+      turnLine = s.pendingResponder !== null ? 'Waiting for the witness to answer.' : 'Waiting for the interrogator to ask a question.';
+    } else {
+      turnLine = s.pendingResponder === null ? 'Waiting for a message.' : 'Waiting for a guess.';
+    }
+  } else if (s.variation === 'original') {
     const isInterrogator = userId === s.interrogator;
     if (s.pendingResponder !== null) {
       turnLine = isInterrogator ? 'Waiting for your partner to answer.' : 'Your turn to answer.';
@@ -130,6 +148,8 @@ bot.command('status', async (ctx) => {
   let scoreLine: string;
   if (s.variation === 'original') {
     scoreLine = `Score — Humans: ${s.teamScores.humans} | Model: ${s.teamScores.model}`;
+  } else if (isSpectator) {
+    scoreLine = `Score — User 1: ${s.scores.user1} | User 2: ${s.scores.user2}`;
   } else {
     const myRole = userId === s.user1 ? 'user1' : 'user2';
     const partnerRole = myRole === 'user1' ? 'user2' : 'user1';

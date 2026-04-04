@@ -18,6 +18,23 @@ export function getProfile(userId: UserId, partnerId: UserId): UserProfile {
   return loadStore()[`${userId}:${partnerId}`] ?? { messages: [] };
 }
 
+const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,31}$/;
+
+export function isValidName(name: string): boolean {
+  return NAME_RE.test(name);
+}
+
+export function getName(userId: UserId): string | undefined {
+  return loadStore()[userId.toString()]?.name;
+}
+
+export function setName(userId: UserId, name: string): void {
+  const store = loadStore();
+  const key = userId.toString();
+  store[key] = { ...store[key], messages: store[key]?.messages ?? [], name };
+  saveStore(store);
+}
+
 export function appendMessage(userId: UserId, partnerId: UserId, message: string): void {
   const store = loadStore();
   const key = `${userId}:${partnerId}`;

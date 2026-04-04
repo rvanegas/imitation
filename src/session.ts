@@ -5,6 +5,7 @@ const sessions = new Map<string, GameSession>();
 const userToSession = new Map<UserId, string>();
 // Maps a stable spectator token (prefixed "spec_") to a session id.
 const spectatorTokens = new Map<string, string>();
+const spectatorToSession = new Map<UserId, string>();
 
 const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 
@@ -68,14 +69,22 @@ export function addSpectator(token: string, userId: UserId): GameSession | null 
   if (sessionId === undefined) return null;
   const session = sessions.get(sessionId);
   if (!session) return null;
+  if (userId === session.user1 || userId === session.user2) return null;
   if (!session.spectators.includes(userId)) {
     session.spectators.push(userId);
+    spectatorToSession.set(userId, session.id);
   }
   return session;
 }
 
 export function getSessionForUser(userId: UserId): GameSession | undefined {
   const sessionId = userToSession.get(userId);
+  if (sessionId === undefined) return undefined;
+  return sessions.get(sessionId);
+}
+
+export function getSessionForSpectator(userId: UserId): GameSession | undefined {
+  const sessionId = spectatorToSession.get(userId);
   if (sessionId === undefined) return undefined;
   return sessions.get(sessionId);
 }
@@ -110,6 +119,7 @@ export function endSession(session: GameSession): void {
   clearTimeout(session.timeoutHandle);
   userToSession.delete(session.user1);
   userToSession.delete(session.user2);
+  for (const id of session.spectators) spectatorToSession.delete(id);
   sessions.delete(session.id);
   spectatorTokens.delete(`spec_${session.id}`);
 }

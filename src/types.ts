@@ -38,6 +38,7 @@ export interface MessagePair {
 
 export interface UserProfile {
   messages: string[];
+  name?: string;
 }
 
 export interface UserProfileStore {
