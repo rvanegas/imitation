@@ -28,6 +28,29 @@ export function getName(userId: UserId): string | undefined {
   return loadStore()[userId.toString()]?.name;
 }
 
+export function getUserIdByName(name: string): UserId | undefined {
+  const store = loadStore();
+  for (const [key, profile] of Object.entries(store)) {
+    if (!key.includes(':') && profile.name === name) {
+      return parseInt(key, 10);
+    }
+  }
+  return undefined;
+}
+
+export function getOrAssignName(userId: UserId): string {
+  const store = loadStore();
+  const key = userId.toString();
+  const existing = store[key]?.name;
+  if (existing) return existing;
+  const counter = ((store as Record<string, any>)['__counter'] ?? 0) + 1;
+  (store as Record<string, any>)['__counter'] = counter;
+  const name = `user${counter}`;
+  store[key] = { messages: store[key]?.messages ?? [], name };
+  saveStore(store);
+  return name;
+}
+
 export function setName(userId: UserId, name: string): void {
   const store = loadStore();
   const key = userId.toString();

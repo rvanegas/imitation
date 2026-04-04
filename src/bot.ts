@@ -3,7 +3,7 @@ import { message } from 'telegraf/filters';
 import { GameSession } from './types';
 import * as session from './session';
 import { generatePrediction } from './imitation';
-import { getProfile, appendMessage, getName, setName, isValidName } from './userProfiles';
+import { getProfile, appendMessage, getName, getOrAssignName, setName, isValidName, getUserIdByName } from './userProfiles';
 import { deliverToSender, deliverToReceiver, deliverToSpectators, deliverRoundResultToSpectators } from './delivery';
 import { logSession } from './log';
 
@@ -55,30 +55,32 @@ bot.start(async (ctx) => {
         },
       }
     );
-  } else if (payload.startsWith('spec_')) {
-    const s = session.addSpectator(payload, userId);
-    if (!s) {
-      const isPlayer = !!session.getSessionForUser(userId);
-      await ctx.reply(isPlayer ? 'You are already a player in this game.' : 'Invalid or expired spectator link.');
-      return;
-    }
-    const spectatorCount = s.spectators.length;
-    await ctx.reply('You are now watching this game as a spectator.');
-    const notice = `A spectator joined. Spectators watching: ${spectatorCount}`;
-    await Promise.all([s.user1, s.user2].map(id => bot.telegram.sendMessage(id, notice)));
   } else {
-    const s = session.acceptInvite(payload, userId, onTimeout);
-    if (!s) {
-      await ctx.reply('Invalid or expired invite link.');
+    const joined = session.acceptInvite(payload, userId, onTimeout);
+    if (joined) {
+      getOrAssignName(userId);
+      if (joined.variation === 'original') {
+        await bot.telegram.sendMessage(joined.user1, 'Game started! You are the interrogator — ask your first question.');
+        await bot.telegram.sendMessage(joined.user2, 'Game started! Your partner is the interrogator. Wait for their first question.');
+      } else {
+        await bot.telegram.sendMessage(joined.user1, 'Game started! You send the first message.');
+        await bot.telegram.sendMessage(joined.user2, 'Game started! Your partner sends the first message.');
+      }
       return;
     }
-    if (s.variation === 'original') {
-      await bot.telegram.sendMessage(s.user1, 'Game started! You are the interrogator — ask your first question.');
-      await bot.telegram.sendMessage(s.user2, 'Game started! Your partner is the interrogator. Wait for their first question.');
-    } else {
-      await bot.telegram.sendMessage(s.user1, 'Game started! You send the first message.');
-      await bot.telegram.sendMessage(s.user2, 'Game started! Your partner sends the first message.');
+
+    const watched = session.addSpectator(payload, userId);
+    if (watched) {
+      getOrAssignName(userId);
+      const spectatorCount = watched.spectators.length;
+      await ctx.reply('You are now watching this game as a spectator.');
+      const notice = `A spectator joined. Spectators watching: ${spectatorCount}`;
+      await Promise.all([watched.user1, watched.user2].map(id => bot.telegram.sendMessage(id, notice)));
+      return;
     }
+
+    const isPlayer = !!session.getSessionForUser(userId);
+    await ctx.reply(isPlayer ? 'You are already a player in this game.' : 'Invalid or expired link.');
   }
 });
 
@@ -86,10 +88,24 @@ bot.action(/^var_(symmetric|original)$/, async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from!.id;
   const variation = ctx.match[1] as 'symmetric' | 'original';
+  getOrAssignName(userId);
   const token = session.createInvite(userId, variation);
   const link = `https://t.me/${ctx.botInfo!.username}?start=${token}`;
   const label = variation === 'original' ? 'Original Turing Test' : 'Symmetric';
-  await ctx.editMessageText(`${label} selected.\n\nShare this invite link with your partner:\n${link}`);
+  await ctx.editMessageText(`${label} selected.\n\nShare this link — the first to click joins as player 2; everyone else watches:\n${link}`);
+});
+
+bot.command('help', async (ctx) => {
+  await ctx.reply(
+    '/start — Create a new game or join via invite link\n' +
+    '/human A|B — Guess which message was written by the human\n' +
+    '/invite — Get the session link; first to click joins as player 2, others watch\n' +
+    '/status — Show current turn, score, and spectator count\n' +
+    '/stop — End the current game and show final scores\n' +
+    '/restart <user1> <user2> — Restart the game with two players from the session\n' +
+    '/setname <name> — Set your display name\n' +
+    '/help — Show this message'
+  );
 });
 
 bot.command('setname', async (ctx) => {
@@ -109,9 +125,8 @@ bot.command('invite', async (ctx) => {
     await ctx.reply('No active session.');
     return;
   }
-  const token = session.createSpectatorInvite(s);
-  const link = `https://t.me/${ctx.botInfo.username}?start=${token}`;
-  await ctx.reply(`Share this spectator link — anyone can click it to watch:\n${link}`);
+  const link = `https://t.me/${ctx.botInfo.username}?start=${s.id}`;
+  await ctx.reply(`Share this link — the first to click joins as player 2; everyone else watches as a spectator:\n${link}`);
 });
 
 bot.command('status', async (ctx) => {
@@ -122,6 +137,8 @@ bot.command('status', async (ctx) => {
     return;
   }
   const isSpectator = s.spectators.includes(userId);
+  const name1 = getName(s.user1) ?? 'user1';
+  const name2 = getName(s.user2) ?? 'user2';
 
   let turnLine: string;
   if (isSpectator) {
@@ -149,16 +166,60 @@ bot.command('status', async (ctx) => {
   if (s.variation === 'original') {
     scoreLine = `Score — Humans: ${s.teamScores.humans} | Model: ${s.teamScores.model}`;
   } else if (isSpectator) {
-    scoreLine = `Score — User 1: ${s.scores.user1} | User 2: ${s.scores.user2}`;
+    scoreLine = `Score — ${name1}: ${s.scores.user1} | ${name2}: ${s.scores.user2}`;
   } else {
     const myRole = userId === s.user1 ? 'user1' : 'user2';
     const partnerRole = myRole === 'user1' ? 'user2' : 'user1';
     scoreLine = `Score — You: ${s.scores[myRole]} | Partner: ${s.scores[partnerRole]}`;
   }
 
-  const spectatorLine = `Spectators: ${s.spectators.length}`;
+  const spectatorNames = s.spectators.map((id, i) => getName(id) ?? `spectator${i + 1}`);
+  const spectatorLine = s.spectators.length === 0
+    ? 'Spectators: none'
+    : `Spectators: ${spectatorNames.join(', ')}`;
+  const playersLine = `Players: ${name1}, ${name2}`;
 
-  await ctx.reply(`${turnLine}\n${scoreLine}\n${spectatorLine}`);
+  await ctx.reply(`${playersLine}\n${turnLine}\n${scoreLine}\n${spectatorLine}`);
+});
+
+bot.command('restart', async (ctx) => {
+  const userId = ctx.from.id;
+  const s = session.getSessionForUser(userId) ?? session.getSessionForSpectator(userId);
+  if (!s) {
+    await ctx.reply('No active session.');
+    return;
+  }
+
+  const args = ctx.message.text.split(/\s+/);
+  const name1 = args[1];
+  const name2 = args[2];
+  if (!name1 || !name2) {
+    await ctx.reply('Usage: /restart <username1> <username2>');
+    return;
+  }
+
+  const id1 = getUserIdByName(name1);
+  const id2 = getUserIdByName(name2);
+  if (!id1) { await ctx.reply(`Unknown user: ${name1}`); return; }
+  if (!id2) { await ctx.reply(`Unknown user: ${name2}`); return; }
+  if (id1 === id2) { await ctx.reply('The two players must be different users.'); return; }
+
+  const allParticipants = [s.user1, s.user2, ...s.spectators];
+  if (!allParticipants.includes(id1)) { await ctx.reply(`${name1} is not in this session.`); return; }
+  if (!allParticipants.includes(id2)) { await ctx.reply(`${name2} is not in this session.`); return; }
+
+  session.restartWithPlayers(s, id1, id2, onTimeout);
+
+  const msg1 = s.variation === 'original'
+    ? 'Game restarted! You are the interrogator — ask your first question.'
+    : 'Game restarted! You send the first message.';
+  const msg2 = s.variation === 'original'
+    ? 'Game restarted! Your partner is the interrogator. Wait for their first question.'
+    : 'Game restarted! Your partner sends the first message.';
+
+  await bot.telegram.sendMessage(s.user1, msg1);
+  await bot.telegram.sendMessage(s.user2, msg2);
+  await Promise.all(s.spectators.map(id => bot.telegram.sendMessage(id, 'Game restarted with new players.')));
 });
 
 bot.command('stop', async (ctx) => {
@@ -168,6 +229,18 @@ bot.command('stop', async (ctx) => {
     await ctx.reply('No active session.');
     return;
   }
+
+  let results: string;
+  if (s.variation === 'original') {
+    const avgTurns = s.roundCount > 0 ? (s.totalTurns / s.roundCount).toFixed(1) : '—';
+    results = `Game over.\nHumans: ${s.teamScores.humans} | Model: ${s.teamScores.model} | Avg turns to guess: ${avgTurns}`;
+  } else {
+    results = `Game over.\nUser 1: ${s.scores.user1} | User 2: ${s.scores.user2}`;
+  }
+
+  const recipients = [s.user1, s.user2, ...s.spectators];
+  await Promise.all(recipients.map(id => bot.telegram.sendMessage(id, results)));
+
   logSession(s);
   session.endSession(s);
 });
@@ -210,7 +283,7 @@ bot.command('human', async (ctx) => {
     ? 'A was the model, B was the human.'
     : 'A was the human, B was the model.';
 
-  const guesserLabel = role === 'user1' ? 'User 1' : 'User 2';
+  const guesserLabel = getName(userId)!;
 
   if (s.variation === 'original') {
     if (correct) {
@@ -302,7 +375,7 @@ bot.on(message('text'), async (ctx) => {
 
       await ctx.reply(`You: ${text}\nModel: ${prediction}`);
       await deliverToReceiver(bot, s.interrogator, { human: text, prediction }, s.imitationFirst);
-      const witnessLabel = witnessRole === 'user1' ? 'User 1' : 'User 2';
+      const witnessLabel = getName(witnessId)!;
       await deliverToSpectators(bot, s, witnessLabel, text, prediction);
       return;
     }
@@ -327,7 +400,7 @@ bot.on(message('text'), async (ctx) => {
     await bot.telegram.sendMessage(witnessId, text);
 
     if (s.spectators.length > 0) {
-      const interrogatorLabel = interrogatorRole === 'user1' ? 'User 1' : 'User 2';
+      const interrogatorLabel = getName(s.interrogator)!;
       await Promise.all(s.spectators.map(id =>
         bot.telegram.sendMessage(id, `${interrogatorLabel} (interrogator): ${text}`)
       ));
@@ -354,7 +427,7 @@ bot.on(message('text'), async (ctx) => {
   session.addToTranscript(s, 'model', prediction);
   s.pendingResponder = partnerId;
 
-  const senderLabel = senderRole === 'user1' ? 'User 1' : 'User 2';
+  const senderLabel = getName(userId)!;
   await deliverToSender(bot, userId, text, prediction);
   await deliverToReceiver(bot, partnerId, { human: text, prediction }, s.imitationFirst);
   await deliverToSpectators(bot, s, senderLabel, text, prediction);

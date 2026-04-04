@@ -3,8 +3,6 @@ import { GameSession, SenderRole, UserId } from './types';
 const pendingSessions = new Map<string, { userId: UserId; variation: 'symmetric' | 'original' }>();
 const sessions = new Map<string, GameSession>();
 const userToSession = new Map<UserId, string>();
-// Maps a stable spectator token (prefixed "spec_") to a session id.
-const spectatorTokens = new Map<string, string>();
 const spectatorToSession = new Map<UserId, string>();
 
 const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
@@ -58,15 +56,7 @@ export function acceptInvite(
   return session;
 }
 
-export function createSpectatorInvite(session: GameSession): string {
-  const token = `spec_${session.id}`;
-  spectatorTokens.set(token, session.id);
-  return token;
-}
-
-export function addSpectator(token: string, userId: UserId): GameSession | null {
-  const sessionId = spectatorTokens.get(token);
-  if (sessionId === undefined) return null;
+export function addSpectator(sessionId: string, userId: UserId): GameSession | null {
   const session = sessions.get(sessionId);
   if (!session) return null;
   if (userId === session.user1 || userId === session.user2) return null;
@@ -115,11 +105,45 @@ export function reshuffle(session: GameSession): void {
   }
 }
 
+export function restartWithPlayers(
+  s: GameSession,
+  newUser1: UserId,
+  newUser2: UserId,
+  onTimeout: (session: GameSession) => void
+): void {
+  userToSession.delete(s.user1);
+  userToSession.delete(s.user2);
+  userToSession.set(newUser1, s.id);
+  userToSession.set(newUser2, s.id);
+
+  const allPrev = [s.user1, s.user2, ...s.spectators];
+  const newSpectators = allPrev.filter(id => id !== newUser1 && id !== newUser2);
+  for (const id of s.spectators) spectatorToSession.delete(id);
+  for (const id of newSpectators) spectatorToSession.set(id, s.id);
+
+  s.user1 = newUser1;
+  s.user2 = newUser2;
+  s.spectators = newSpectators;
+  s.imitationFirst = Math.random() < 0.5;
+  s.transcript = [];
+  s.pendingResponder = s.variation === 'original' ? null : newUser1;
+  s.firstSender = newUser1;
+  s.interrogator = newUser1;
+  s.pendingPrediction = null;
+  s.scores = { user1: 0, user2: 0 };
+  s.teamScores = { humans: 0, model: 0 };
+  s.currentRoundTurns = 0;
+  s.totalTurns = 0;
+  s.roundCount = 0;
+
+  clearTimeout(s.timeoutHandle);
+  s.timeoutHandle = setTimeout(() => onTimeout(s), SESSION_TIMEOUT_MS);
+}
+
 export function endSession(session: GameSession): void {
   clearTimeout(session.timeoutHandle);
   userToSession.delete(session.user1);
   userToSession.delete(session.user2);
   for (const id of session.spectators) spectatorToSession.delete(id);
   sessions.delete(session.id);
-  spectatorTokens.delete(`spec_${session.id}`);
 }
