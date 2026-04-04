@@ -13,7 +13,7 @@ Rules:
 - Do not use emojis under any circumstances.
 - Write only the predicted message. No explanation, no prefix.`;
 
-function buildSystemPrompt(priorMessages: string[], isOpener: boolean, selfFollow: boolean): string {
+function buildSystemPrompt(priorMessages: string[], isOpener: boolean, selfFollow: boolean, assessments: string[]): string {
   const openerGuidance = isOpener
     ? '\nThe conversation has not started yet — you are generating an opening message. It must stand alone with no prior context. Default to a very short, casual opener. Do not ask a question or reference anything.'
     : selfFollow
@@ -22,7 +22,7 @@ function buildSystemPrompt(priorMessages: string[], isOpener: boolean, selfFollo
 
   if (priorMessages.length > 0) {
     const examples = priorMessages.map((m, i) => `  ${i + 1}. ${m}`).join('\n');
-    return `${BASE_PROMPT}
+    let prompt = `${BASE_PROMPT}
 
 The following are real messages this user has sent in previous sessions. Use them ONLY to calibrate style — pay close attention to their typical message length, vocabulary, punctuation habits, use of emoji or slang, sentence structure, and any spelling or grammatical errors they make.
 
@@ -31,18 +31,29 @@ If this user makes spelling or grammatical mistakes, reproduce errors at a simil
 Do NOT reproduce these messages verbatim, unless the message is a very short, context-free phrase (e.g. "hi", "yes", "ok") where repetition is natural. For anything longer or more specific, treat it as a writing sample only — never copy or closely paraphrase it, since each was written in response to a context you do not have.
 ${openerGuidance}
 ${examples}`;
+    if (assessments.length > 0) {
+      prompt += '\n\nLessons from previous imitation attempts:\n';
+      prompt += assessments.map(a => `- ${a}`).join('\n');
+    }
+    return prompt;
   }
 
-  return `${BASE_PROMPT}
+  let prompt = `${BASE_PROMPT}
 
 You have no prior messages from this user. Default to a very short, casual opener — one to five words is normal. Do not compose a full paragraph.`;
+  if (assessments.length > 0) {
+    prompt += '\n\nLessons from previous imitation attempts:\n';
+    prompt += assessments.map(a => `- ${a}`).join('\n');
+  }
+  return prompt;
 }
 
 export async function generatePrediction(
   transcript: TranscriptEntry[],
   senderRole: 'user1' | 'user2',
   priorMessages: string[],
-  questionContext?: string
+  questionContext?: string,
+  assessments: string[] = [],
 ): Promise<string> {
   let prompt = '';
 
@@ -81,7 +92,34 @@ export async function generatePrediction(
   const response = await client.messages.create({
     model,
     max_tokens: 1024,
-    system: buildSystemPrompt(priorMessages, isOpener, selfFollow),
+    system: buildSystemPrompt(priorMessages, isOpener, selfFollow, assessments),
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const block = response.content[0];
+  if (block.type !== 'text') throw new Error('Unexpected response type from Claude');
+  return block.text.trim();
+}
+
+export async function generateAssessment(
+  humanMessage: string,
+  aiPrediction: string,
+  correct: boolean,
+): Promise<string> {
+  const outcome = correct
+    ? 'The human correctly identified the AI — the imitation did not fool them.'
+    : 'The human was fooled — they thought the AI message was human.';
+  const prompt =
+    `You just attempted to imitate a human in a Turing Test.\n\n` +
+    `The human actually wrote: "${humanMessage}"\n` +
+    `Your imitation was: "${aiPrediction}"\n\n` +
+    `${outcome}\n\n` +
+    `In 2-3 sentences, assess what worked or didn't work in your imitation, and what you should do differently next time.`;
+
+  const model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6';
+  const response = await client.messages.create({
+    model,
+    max_tokens: 256,
     messages: [{ role: 'user', content: prompt }],
   });
 

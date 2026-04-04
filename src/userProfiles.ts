@@ -58,6 +58,24 @@ export function setName(userId: UserId, name: string): void {
   saveStore(store);
 }
 
+export function appendAssessment(assessment: string): void {
+  const store = loadStore();
+  const list: string[] = (store as Record<string, any>)['__assessments']?.list ?? [];
+  list.push(assessment);
+  (store as Record<string, any>)['__assessments'] = { list };
+  saveStore(store);
+}
+
+export function getAssessments(): string[] {
+  return (loadStore() as Record<string, any>)['__assessments']?.list ?? [];
+}
+
+export function setAssessments(list: string[]): void {
+  const store = loadStore();
+  (store as Record<string, any>)['__assessments'] = { list };
+  saveStore(store);
+}
+
 export function appendMessage(userId: UserId, partnerId: UserId, message: string): void {
   const store = loadStore();
   const key = `${userId}:${partnerId}`;

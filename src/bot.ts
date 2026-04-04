@@ -2,8 +2,8 @@ import { Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { GameSession } from './types';
 import * as session from './session';
-import { generatePrediction } from './imitation';
-import { getProfile, appendMessage, getName, getOrAssignName, setName, isValidName, getUserIdByName } from './userProfiles';
+import { generatePrediction, generateAssessment } from './imitation';
+import { getProfile, appendMessage, getName, getOrAssignName, setName, isValidName, getUserIdByName, appendAssessment, getAssessments } from './userProfiles';
 import { deliverToSender, deliverToReceiver, deliverToSpectators, deliverRoundResultToSpectators } from './delivery';
 import { logSession } from './log';
 
@@ -301,6 +301,14 @@ bot.command('human', async (ctx) => {
 
     s.transcript.push({ role: 'guess', content: `${guess} (${reveal})`, correct, guesser: role as 'user1' | 'user2' });
 
+    const _modelEntry1 = s.transcript[s.transcript.length - 2];
+    const _humanEntry1 = s.transcript[s.transcript.length - 3];
+    if (_modelEntry1?.role === 'model' && _humanEntry1) {
+      generateAssessment(_humanEntry1.content, _modelEntry1.content, correct)
+        .then(assessment => appendAssessment(assessment))
+        .catch(() => {});
+    }
+
     await deliverRoundResultToSpectators(bot, s, guesserLabel, correct, reveal, s.scores, s.teamScores);
     session.reshuffle(s);
 
@@ -321,6 +329,14 @@ bot.command('human', async (ctx) => {
     const verdict = correct ? 'Correct! +1' : 'Wrong! -1';
 
     s.transcript.push({ role: 'guess', content: `${guess} (${reveal})`, correct, guesser: role as 'user1' | 'user2' });
+
+    const _modelEntry2 = s.transcript[s.transcript.length - 2];
+    const _humanEntry2 = s.transcript[s.transcript.length - 3];
+    if (_modelEntry2?.role === 'model' && _humanEntry2) {
+      generateAssessment(_humanEntry2.content, _modelEntry2.content, correct)
+        .then(assessment => appendAssessment(assessment))
+        .catch(() => {});
+    }
 
     await deliverRoundResultToSpectators(bot, s, guesserLabel, correct, reveal, s.scores);
     session.reshuffle(s);
@@ -389,7 +405,7 @@ bot.on(message('text'), async (ctx) => {
 
     const witnessRole = witnessId === s.user1 ? 'user1' : 'user2';
     const profile = getProfile(witnessId, s.interrogator);
-    const prediction = stripEmoji(await generatePrediction(s.transcript, witnessRole, profile.messages, text));
+    const prediction = stripEmoji(await generatePrediction(s.transcript, witnessRole, profile.messages, text, getAssessments()));
     s.pendingPrediction = prediction;
     s.pendingResponder = witnessId;
 
@@ -420,7 +436,7 @@ bot.on(message('text'), async (ctx) => {
   const partnerId = session.getPartner(s, userId);
 
   const profile = getProfile(userId, partnerId);
-  const prediction = stripEmoji(await generatePrediction(s.transcript, senderRole, profile.messages));
+  const prediction = stripEmoji(await generatePrediction(s.transcript, senderRole, profile.messages, undefined, getAssessments()));
   appendMessage(userId, partnerId, text);
 
   session.addToTranscript(s, senderRole, text);
