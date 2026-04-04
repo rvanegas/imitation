@@ -1,9 +1,12 @@
 export type UserId = number;
-export type SenderRole = 'user1' | 'user2' | 'model';
+export type SenderRole = 'user1' | 'user2' | 'model' | 'guess';
 
 export interface TranscriptEntry {
   role: SenderRole;
   content: string;
+  // Only present when role === 'guess'
+  correct?: boolean;
+  guesser?: 'user1' | 'user2';
 }
 
 export interface GameSession {

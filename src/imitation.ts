@@ -53,6 +53,8 @@ export async function generatePrediction(
       if (entry.role === 'model') {
         const imitationOf = lastHumanRole === 'user1' ? '[User 1 imitation]' : '[User 2 imitation]';
         lines.push(`${imitationOf}: ${entry.content}`);
+      } else if (entry.role === 'guess') {
+        // skip guess entries — not part of the conversation context
       } else {
         lastHumanRole = entry.role;
         const label = entry.role === 'user1' ? '[User 1]' : '[User 2]';
@@ -74,8 +76,9 @@ export async function generatePrediction(
   const lastRealRole = realMessages.at(-1)?.role ?? null;
   const selfFollow = !isOpener && !questionContext && lastRealRole === senderRole;
 
+  const model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6';
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
+    model,
     max_tokens: 1024,
     system: buildSystemPrompt(priorMessages, isOpener, selfFollow),
     messages: [{ role: 'user', content: prompt }],

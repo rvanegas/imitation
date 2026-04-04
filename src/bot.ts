@@ -161,6 +161,8 @@ bot.command('human', async (ctx) => {
       : '—';
     const scoreStr = `Humans: ${s.teamScores.humans} | Model: ${s.teamScores.model} | Avg turns to correct guess: ${avgTurns}`;
 
+    s.transcript.push({ role: 'guess', content: `${guess} (${reveal})`, correct, guesser: role as 'user1' | 'user2' });
+
     await deliverRoundResultToSpectators(bot, s, guesserLabel, correct, reveal, s.scores, s.teamScores);
     session.reshuffle(s);
 
@@ -179,6 +181,8 @@ bot.command('human', async (ctx) => {
     const myScore = s.scores[role];
     const partnerScore = s.scores[partnerRole];
     const verdict = correct ? 'Correct! +1' : 'Wrong! -1';
+
+    s.transcript.push({ role: 'guess', content: `${guess} (${reveal})`, correct, guesser: role as 'user1' | 'user2' });
 
     await deliverRoundResultToSpectators(bot, s, guesserLabel, correct, reveal, s.scores);
     session.reshuffle(s);

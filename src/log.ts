@@ -8,7 +8,11 @@ function formatTranscript(transcript: TranscriptEntry[]): string {
   let lastHumanRole: 'user1' | 'user2' | null = null;
   const lines: string[] = [];
   for (const entry of transcript) {
-    if (entry.role === 'model') {
+    if (entry.role === 'guess') {
+      const guesserLabel = entry.guesser === 'user1' ? 'User 1' : 'User 2';
+      const verdict = entry.correct ? 'CORRECT' : 'WRONG';
+      lines.push(`[${guesserLabel} guessed: ${entry.content} — ${verdict}]`);
+    } else if (entry.role === 'model') {
       const label = lastHumanRole === 'user1' ? '[User 1 imitation]' : '[User 2 imitation]';
       lines.push(`${label}: ${entry.content}`);
     } else {
