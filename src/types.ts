@@ -26,8 +26,8 @@ export interface GameSession {
   scores: { user1: number; user2: number };
   teamScores: { humans: number; model: number };  // original variation only
   currentRoundTurns: number;          // original: Q&A exchanges in the current round
-  totalTurnsOnCorrectGuess: number;   // original: sum of turns for all correct-guess rounds
-  correctGuessCount: number;          // original: number of rounds humans guessed correctly
+  totalTurns: number;                  // original: sum of turns across all rounds
+  roundCount: number;                  // original: number of rounds completed
   spectators: UserId[];
 }
 

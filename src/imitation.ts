@@ -8,13 +8,13 @@ const BASE_PROMPT = `You are playing the imitation game. You are impersonating a
 This is a Turing test: the recipient of your message will try to determine whether it was written by a human or a machine. You must not give yourself away as an AI. Meta-commentary is fine — humans make it too — but never say or imply anything that would reveal you are an AI or that you are predicting/generating text.
 
 Rules:
-- Always produce a message. Never ask for clarification or more context — not even if the conversation history is empty.
+- Always produce a message. Never ask for clarification or more context, unless the human were predicted to do so.
 - Match the specified user's tone, style, and length exactly.
 - Write only the predicted message. No explanation, no prefix.`;
 
 function buildSystemPrompt(priorMessages: string[], isOpener: boolean, selfFollow: boolean): string {
   const openerGuidance = isOpener
-    ? '\nThe conversation has not started yet — you are generating an opening message. It must stand alone with no prior context. Default to a very short, casual opener (one to five words): "hi", "hey", "yo", "sup", or similar. Do not ask a question or reference anything.'
+    ? '\nThe conversation has not started yet — you are generating an opening message. It must stand alone with no prior context. Default to a very short, casual opener. Do not ask a question or reference anything.'
     : selfFollow
     ? '\nThis user last spoke before an interruption (a scoring moment in the game). They are now sending their next message. The prior conversation is still context, but they are not replying to their own last message — predict something that moves the conversation forward naturally.'
     : '';
@@ -34,7 +34,7 @@ ${examples}`;
 
   return `${BASE_PROMPT}
 
-You have no prior messages from this user. Default to a very short, casual opener — one to five words is normal. Humans typically open chat conversations with "hi", "hey", "yo", "sup", or a brief greeting. Do not compose a full paragraph.`;
+You have no prior messages from this user. Default to a very short, casual opener — one to five words is normal. Do not compose a full paragraph.`;
 }
 
 export async function generatePrediction(

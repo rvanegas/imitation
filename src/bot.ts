@@ -57,7 +57,10 @@ bot.start(async (ctx) => {
       await ctx.reply('Invalid or expired spectator link.');
       return;
     }
+    const spectatorCount = s.spectators.length;
     await ctx.reply('You are now watching this game as a spectator.');
+    const notice = `A spectator joined. Spectators watching: ${spectatorCount}`;
+    await Promise.all([s.user1, s.user2].map(id => bot.telegram.sendMessage(id, notice)));
   } else {
     const s = session.acceptInvite(payload, userId, onTimeout);
     if (!s) {
@@ -150,16 +153,16 @@ bot.command('human', async (ctx) => {
   if (s.variation === 'original') {
     if (correct) {
       s.teamScores.humans += 1;
-      s.totalTurnsOnCorrectGuess += s.currentRoundTurns;
-      s.correctGuessCount += 1;
     } else {
       s.teamScores.model += 1;
     }
+    s.totalTurns += s.currentRoundTurns;
+    s.roundCount += 1;
     const verdict = correct ? 'Correct! Humans +1' : 'Wrong! Model +1';
-    const avgTurns = s.correctGuessCount > 0
-      ? (s.totalTurnsOnCorrectGuess / s.correctGuessCount).toFixed(1)
+    const avgTurns = s.roundCount > 0
+      ? (s.totalTurns / s.roundCount).toFixed(1)
       : '—';
-    const scoreStr = `Humans: ${s.teamScores.humans} | Model: ${s.teamScores.model} | Avg turns to correct guess: ${avgTurns}`;
+    const scoreStr = `Humans: ${s.teamScores.humans} | Model: ${s.teamScores.model} | Avg turns to guess: ${avgTurns}`;
 
     s.transcript.push({ role: 'guess', content: `${guess} (${reveal})`, correct, guesser: role as 'user1' | 'user2' });
 

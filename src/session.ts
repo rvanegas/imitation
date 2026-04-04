@@ -45,8 +45,8 @@ export function acceptInvite(
     scores: { user1: 0, user2: 0 },
     teamScores: { humans: 0, model: 0 },
     currentRoundTurns: 0,
-    totalTurnsOnCorrectGuess: 0,
-    correctGuessCount: 0,
+    totalTurns: 0,
+    roundCount: 0,
     spectators: [],
   };
 

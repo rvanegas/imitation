@@ -1,3 +1,3 @@
 
-- Spelling, Grammar
-- multiple sessions
+- iOS
+- test harness
