@@ -12,6 +12,10 @@ if (!BOT_TOKEN) throw new Error('BOT_TOKEN is required in .env');
 
 export const bot = new Telegraf(BOT_TOKEN);
 
+function stripEmoji(text: string): string {
+  return text.replace(/\p{Extended_Pictographic}/gu, '').replace(/\s{2,}/g, ' ').trim();
+}
+
 bot.use((ctx, next) => {
   if (ctx.message && 'text' in ctx.message) {
     const cmdEntity = ctx.message.entities?.find(
@@ -97,6 +101,44 @@ bot.command('invite', async (ctx) => {
   const token = session.createSpectatorInvite(s);
   const link = `https://t.me/${ctx.botInfo.username}?start=${token}`;
   await ctx.reply(`Share this spectator link — anyone can click it to watch:\n${link}`);
+});
+
+bot.command('status', async (ctx) => {
+  const userId = ctx.from.id;
+  const s = session.getSessionForUser(userId);
+  if (!s) {
+    await ctx.reply('No active session.');
+    return;
+  }
+
+  let turnLine: string;
+  if (s.variation === 'original') {
+    const isInterrogator = userId === s.interrogator;
+    if (s.pendingResponder !== null) {
+      turnLine = isInterrogator ? 'Waiting for your partner to answer.' : 'Your turn to answer.';
+    } else {
+      turnLine = isInterrogator ? 'Your turn to ask a question.' : 'Waiting for your partner to ask a question.';
+    }
+  } else {
+    if (s.pendingResponder === null) {
+      turnLine = userId === s.firstSender ? 'Your turn to send a message.' : 'Waiting for your partner to send a message.';
+    } else {
+      turnLine = s.pendingResponder === userId ? 'Your turn to guess (/human A or /human B).' : 'Waiting for your partner to guess.';
+    }
+  }
+
+  let scoreLine: string;
+  if (s.variation === 'original') {
+    scoreLine = `Score — Humans: ${s.teamScores.humans} | Model: ${s.teamScores.model}`;
+  } else {
+    const myRole = userId === s.user1 ? 'user1' : 'user2';
+    const partnerRole = myRole === 'user1' ? 'user2' : 'user1';
+    scoreLine = `Score — You: ${s.scores[myRole]} | Partner: ${s.scores[partnerRole]}`;
+  }
+
+  const spectatorLine = `Spectators: ${s.spectators.length}`;
+
+  await ctx.reply(`${turnLine}\n${scoreLine}\n${spectatorLine}`);
 });
 
 bot.command('stop', async (ctx) => {
@@ -214,7 +256,8 @@ bot.on(message('text'), async (ctx) => {
     return;
   }
 
-  const text = ctx.message.text;
+  const text = stripEmoji(ctx.message.text);
+  if (!text) return;
 
   if (s.variation === 'original') {
     const witnessId = session.getPartner(s, s.interrogator);
@@ -227,7 +270,7 @@ bot.on(message('text'), async (ctx) => {
       }
       session.touchSession(s, onTimeout);
 
-      const prediction = s.pendingPrediction!;
+      const prediction = stripEmoji(s.pendingPrediction!);
       const witnessRole = witnessId === s.user1 ? 'user1' : 'user2';
 
       session.addToTranscript(s, witnessRole, text);
@@ -253,7 +296,7 @@ bot.on(message('text'), async (ctx) => {
 
     const witnessRole = witnessId === s.user1 ? 'user1' : 'user2';
     const profile = getProfile(witnessId, s.interrogator);
-    const prediction = await generatePrediction(s.transcript, witnessRole, profile.messages, text);
+    const prediction = stripEmoji(await generatePrediction(s.transcript, witnessRole, profile.messages, text));
     s.pendingPrediction = prediction;
     s.pendingResponder = witnessId;
 
@@ -284,7 +327,7 @@ bot.on(message('text'), async (ctx) => {
   const partnerId = session.getPartner(s, userId);
 
   const profile = getProfile(userId, partnerId);
-  const prediction = await generatePrediction(s.transcript, senderRole, profile.messages);
+  const prediction = stripEmoji(await generatePrediction(s.transcript, senderRole, profile.messages));
   appendMessage(userId, partnerId, text);
 
   session.addToTranscript(s, senderRole, text);

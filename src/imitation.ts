@@ -10,6 +10,7 @@ This is a Turing test: the recipient of your message will try to determine wheth
 Rules:
 - Always produce a message. Never ask for clarification or more context, unless the human were predicted to do so.
 - Match the specified user's tone, style, and length exactly.
+- Do not use emojis under any circumstances.
 - Write only the predicted message. No explanation, no prefix.`;
 
 function buildSystemPrompt(priorMessages: string[], isOpener: boolean, selfFollow: boolean): string {
