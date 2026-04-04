@@ -1,8 +1,9 @@
 import * as dotenv from 'dotenv';
 dotenv.config();
 
-import { bot } from './bot';
+import { bot, initSessions } from './bot';
 
+initSessions();
 bot.launch();
 console.log('Bot running.');
 

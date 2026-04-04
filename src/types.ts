@@ -30,6 +30,7 @@ export interface GameSession {
   roundCount: number;                  // original: number of rounds completed
   spectators: UserId[];
   lastSystemPrompt?: string;
+  lastActivity: number;
 }
 
 export interface MessagePair {

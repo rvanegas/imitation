@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { GameSession, SenderRole, UserId } from './types';
 
 const pendingSessions = new Map<string, { userId: UserId; variation: 'symmetric' | 'original' }>();
@@ -6,14 +8,55 @@ const userToSession = new Map<UserId, string>();
 const spectatorToSession = new Map<UserId, string>();
 
 const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+const SESSIONS_FILE = path.join(process.cwd(), 'sessions.json');
 
 function generateToken(): string {
   return Math.random().toString(36).slice(2, 8);
 }
 
+export function persistSessions(): void {
+  const data = {
+    sessions: Object.fromEntries(
+      [...sessions.entries()].map(([id, s]) => {
+        const { timeoutHandle, ...rest } = s;
+        return [id, rest];
+      })
+    ),
+    pendingSessions: Object.fromEntries(pendingSessions.entries()),
+  };
+  fs.writeFileSync(SESSIONS_FILE, JSON.stringify(data, null, 2));
+}
+
+export function loadPersistedSessions(onTimeout: (session: GameSession) => void): void {
+  let data: any;
+  try {
+    data = JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8'));
+  } catch {
+    return;
+  }
+
+  for (const [token, entry] of Object.entries<any>(data.pendingSessions ?? {})) {
+    pendingSessions.set(token, entry);
+  }
+
+  for (const [id, persisted] of Object.entries<any>(data.sessions ?? {})) {
+    const elapsed = Date.now() - (persisted.lastActivity ?? 0);
+    const remaining = Math.max(0, SESSION_TIMEOUT_MS - elapsed);
+    const session: GameSession = { ...persisted, timeoutHandle: null as any };
+    session.timeoutHandle = setTimeout(() => onTimeout(session), remaining);
+    sessions.set(id, session);
+    userToSession.set(session.user1, id);
+    userToSession.set(session.user2, id);
+    for (const spectatorId of session.spectators ?? []) {
+      spectatorToSession.set(spectatorId, id);
+    }
+  }
+}
+
 export function createInvite(userId: UserId, variation: 'symmetric' | 'original'): string {
   const token = generateToken();
   pendingSessions.set(token, { userId, variation });
+  persistSessions();
   return token;
 }
 
@@ -54,12 +97,14 @@ export function acceptInvite(
     totalTurns: 0,
     roundCount: 0,
     spectators: [],
+    lastActivity: Date.now(),
   };
 
   sessions.set(session.id, session);
   userToSession.set(initiator, session.id);
   userToSession.set(userId, session.id);
 
+  persistSessions();
   return session;
 }
 
@@ -71,6 +116,7 @@ export function addSpectator(sessionId: string, userId: UserId): GameSession | n
     session.spectators.push(userId);
     spectatorToSession.set(userId, session.id);
   }
+  persistSessions();
   return session;
 }
 
@@ -97,6 +143,8 @@ export function addToTranscript(session: GameSession, role: SenderRole, content:
 export function touchSession(session: GameSession, onTimeout: (session: GameSession) => void): void {
   clearTimeout(session.timeoutHandle);
   session.timeoutHandle = setTimeout(() => onTimeout(session), SESSION_TIMEOUT_MS);
+  session.lastActivity = Date.now();
+  persistSessions();
 }
 
 export function reshuffle(session: GameSession): void {
@@ -110,6 +158,7 @@ export function reshuffle(session: GameSession): void {
     session.firstSender = session.firstSender === session.user1 ? session.user2 : session.user1;
     session.pendingResponder = session.firstSender;
   }
+  persistSessions();
 }
 
 export function restartWithPlayers(
@@ -142,9 +191,12 @@ export function restartWithPlayers(
   s.currentRoundTurns = 0;
   s.totalTurns = 0;
   s.roundCount = 0;
+  s.lastActivity = Date.now();
 
   clearTimeout(s.timeoutHandle);
   s.timeoutHandle = setTimeout(() => onTimeout(s), SESSION_TIMEOUT_MS);
+
+  persistSessions();
 }
 
 export function endSession(session: GameSession): void {
@@ -153,4 +205,5 @@ export function endSession(session: GameSession): void {
   userToSession.delete(session.user2);
   for (const id of session.spectators) spectatorToSession.delete(id);
   sessions.delete(session.id);
+  persistSessions();
 }

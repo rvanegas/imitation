@@ -5,20 +5,22 @@ import { getAssessments } from './userProfiles';
 
 const LOG_DIR = path.join(process.cwd(), 'logs');
 
-function formatTranscript(transcript: TranscriptEntry[]): string {
+function formatTranscript(transcript: TranscriptEntry[], session: GameSession): string {
+  const id1 = String(session.user1);
+  const id2 = String(session.user2);
   let lastHumanRole: 'user1' | 'user2' | null = null;
   const lines: string[] = [];
   for (const entry of transcript) {
     if (entry.role === 'guess') {
-      const guesserLabel = entry.guesser === 'user1' ? 'User 1' : 'User 2';
+      const guesserLabel = entry.guesser === 'user1' ? id1 : id2;
       const verdict = entry.correct ? 'CORRECT' : 'WRONG';
       lines.push(`[${guesserLabel} guessed: ${entry.content} — ${verdict}]`);
     } else if (entry.role === 'model') {
-      const label = lastHumanRole === 'user1' ? '[User 1 imitation]' : '[User 2 imitation]';
+      const label = lastHumanRole === 'user1' ? `[${id1} imitation]` : `[${id2} imitation]`;
       lines.push(`${label}: ${entry.content}`);
     } else {
       lastHumanRole = entry.role;
-      const label = entry.role === 'user1' ? '[User 1]' : '[User 2]';
+      const label = entry.role === 'user1' ? `[${id1}]` : `[${id2}]`;
       lines.push(`${label}: ${entry.content}`);
     }
   }
@@ -51,7 +53,7 @@ function writeLog(session: GameSession, ended: boolean): void {
 
   headerLines.push('', '--- Transcript (as sent to model) ---', '');
 
-  fs.writeFileSync(filepath, headerLines.join('\n') + formatTranscript(session.transcript));
+  fs.writeFileSync(filepath, headerLines.join('\n') + formatTranscript(session.transcript, session));
 }
 
 export function updateLog(session: GameSession): void {
