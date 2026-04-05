@@ -3,7 +3,7 @@ import { message } from 'telegraf/filters';
 import { GameSession } from './types';
 import * as session from './session';
 import { generatePrediction, generateAssessment } from './imitation';
-import { getProfile, appendMessage, getName, getOrAssignName, setName, isValidName, getUserIdByName, appendAssessment, getAssessments } from './userProfiles';
+import { getProfile, appendMessage, getName, getOrAssignName, setName, isValidName, getUserIdByName, appendAssessment, getAssessmentsWithMeta } from './userProfiles';
 import { deliverToSender, deliverToReceiver, deliverToSpectators, deliverRoundResultToSpectators } from './delivery';
 import { logSession, updateLog } from './log';
 
@@ -79,11 +79,11 @@ bot.start(async (ctx) => {
     if (joined) {
       getOrAssignName(userId);
       if (joined.variation === 'original') {
-        await bot.telegram.sendMessage(joined.user1, 'Game started! You are the interrogator — ask your first question.');
-        await bot.telegram.sendMessage(joined.user2, 'Game started! Your partner is the interrogator. Wait for their first question.');
+        await bot.telegram.sendMessage(joined.user1, 'Game started! You are the interrogator — ask your first question.\n\n' + HELP_TEXT);
+        await bot.telegram.sendMessage(joined.user2, 'Game started! Your partner is the interrogator. Wait for their first question.\n\n' + HELP_TEXT);
       } else {
-        await bot.telegram.sendMessage(joined.user1, 'Game started! You send the first message.');
-        await bot.telegram.sendMessage(joined.user2, 'Game started! Your partner sends the first message.');
+        await bot.telegram.sendMessage(joined.user1, 'Game started! You send the first message.\n\n' + HELP_TEXT);
+        await bot.telegram.sendMessage(joined.user2, 'Game started! Your partner sends the first message.\n\n' + HELP_TEXT);
       }
       return;
     }
@@ -92,7 +92,7 @@ bot.start(async (ctx) => {
     if (watched) {
       getOrAssignName(userId);
       const spectatorCount = watched.spectators.length;
-      await ctx.reply('You are now watching this game as a spectator.');
+      await ctx.reply('You are now watching this game as a spectator.\n\n' + HELP_TEXT);
       const notice = `A spectator joined. Spectators watching: ${spectatorCount}`;
       await Promise.all([watched.user1, watched.user2].map(id => bot.telegram.sendMessage(id, notice)));
       return;
@@ -114,17 +114,19 @@ bot.action(/^var_(symmetric|original)$/, async (ctx) => {
   await ctx.editMessageText(`${label} selected.\n\nShare this link — the first to click joins as player 2; everyone else watches:\n${link}`);
 });
 
+const HELP_TEXT =
+  '/start — Create a new game or join via invite link\n' +
+  '/human A|B — Guess which message was written by the human\n' +
+  '/invite — Get the session link; first to click joins as player 2, others watch\n' +
+  '/status — Show current turn, score, and spectator count\n' +
+  '/stop — End the current game and show final scores\n' +
+  '/leave — Leave the current session (spectators leave silently; players end the game)\n' +
+  '/restart <user1> <user2> — Restart the game with two players from the session\n' +
+  '/setname <name> — Set your display name\n' +
+  '/help — Show this message';
+
 bot.command('help', async (ctx) => {
-  await ctx.reply(
-    '/start — Create a new game or join via invite link\n' +
-    '/human A|B — Guess which message was written by the human\n' +
-    '/invite — Get the session link; first to click joins as player 2, others watch\n' +
-    '/status — Show current turn, score, and spectator count\n' +
-    '/stop — End the current game and show final scores\n' +
-    '/restart <user1> <user2> — Restart the game with two players from the session\n' +
-    '/setname <name> — Set your display name\n' +
-    '/help — Show this message'
-  );
+  await ctx.reply(HELP_TEXT);
 });
 
 bot.command('setname', async (ctx) => {
@@ -264,6 +266,43 @@ bot.command('stop', async (ctx) => {
   session.endSession(s);
 });
 
+bot.command('leave', async (ctx) => {
+  const userId = ctx.from.id;
+
+  const s = session.getSessionForSpectator(userId);
+  if (s) {
+    s.spectators = s.spectators.filter(id => id !== userId);
+    session.persistSessions();
+    await ctx.reply('You have left the session.');
+    const name = getName(userId) ?? 'A spectator';
+    const spectatorCount = s.spectators.length;
+    await Promise.all([s.user1, s.user2].map(id =>
+      bot.telegram.sendMessage(id, `${name} left. Spectators watching: ${spectatorCount}`)
+    ));
+    return;
+  }
+
+  const ps = session.getSessionForUser(userId);
+  if (!ps) {
+    await ctx.reply('No active session.');
+    return;
+  }
+
+  let results: string;
+  if (ps.variation === 'original') {
+    const avgTurns = ps.roundCount > 0 ? (ps.totalTurns / ps.roundCount).toFixed(1) : '—';
+    results = `Game over.\nHumans: ${ps.teamScores.humans} | Model: ${ps.teamScores.model} | Avg turns to guess: ${avgTurns}`;
+  } else {
+    results = `Game over.\nUser 1: ${ps.scores.user1} | User 2: ${ps.scores.user2}`;
+  }
+
+  const recipients = [ps.user1, ps.user2, ...ps.spectators];
+  await Promise.all(recipients.map(id => bot.telegram.sendMessage(id, results)));
+
+  logSession(ps);
+  session.endSession(ps);
+});
+
 bot.command('human', async (ctx) => {
   const userId = ctx.from.id;
   const s = session.getSessionForUser(userId);
@@ -324,13 +363,15 @@ bot.command('human', async (ctx) => {
     const _modelEntry1 = s.transcript[s.transcript.length - 2];
     const _humanEntry1 = s.transcript[s.transcript.length - 3];
     if (_modelEntry1?.role === 'model' && _humanEntry1) {
+      const imitateeId1 = _humanEntry1.role === 'user1' ? s.user1 : s.user2;
       const _meta1 = {
         sessionId: s.id,
         guessNumber: s.transcript.filter(e => e.role === 'guess').length,
         guesserId: userId,
+        imitateeId: imitateeId1,
         correct,
       };
-      generateAssessment(s.transcript.slice(0, -3), _humanEntry1.content, _modelEntry1.content, correct)
+      generateAssessment(s.transcript.slice(0, -3), _humanEntry1.content, _modelEntry1.content, correct, imitateeId1)
         .then(assessment => appendAssessment(assessment, _meta1))
         .catch(() => {});
     }
@@ -360,13 +401,15 @@ bot.command('human', async (ctx) => {
     const _modelEntry2 = s.transcript[s.transcript.length - 2];
     const _humanEntry2 = s.transcript[s.transcript.length - 3];
     if (_modelEntry2?.role === 'model' && _humanEntry2) {
+      const imitateeId2 = _humanEntry2.role === 'user1' ? s.user1 : s.user2;
       const _meta2 = {
         sessionId: s.id,
         guessNumber: s.transcript.filter(e => e.role === 'guess').length,
         guesserId: userId,
+        imitateeId: imitateeId2,
         correct,
       };
-      generateAssessment(s.transcript.slice(0, -3), _humanEntry2.content, _modelEntry2.content, correct)
+      generateAssessment(s.transcript.slice(0, -3), _humanEntry2.content, _modelEntry2.content, correct, imitateeId2)
         .then(assessment => appendAssessment(assessment, _meta2))
         .catch(() => {});
     }
@@ -418,7 +461,9 @@ bot.on(message('text'), async (ctx) => {
       session.addToTranscript(s, witnessRole, text);
       session.addToTranscript(s, 'model', prediction);
       appendMessage(witnessId, s.interrogator, text);
+      if (s.pendingSystemPrompt) s.lastSystemPrompt = s.pendingSystemPrompt;
       s.pendingPrediction = null;
+      s.pendingSystemPrompt = null;
       s.pendingResponder = null; // back to interrogator's turn
       s.currentRoundTurns += 1;
       saveState(s);
@@ -438,10 +483,21 @@ bot.on(message('text'), async (ctx) => {
     session.touchSession(s, onTimeout);
 
     const witnessRole = witnessId === s.user1 ? 'user1' : 'user2';
-    const profile = getProfile(witnessId, s.interrogator);
-    const { text: predText, systemPrompt: sp1 } = await generatePrediction(s.transcript, witnessRole, profile.messages, text, getAssessments());
+    const witnessProfile = getProfile(witnessId, s.interrogator);
+    const interrogatorProfile = getProfile(s.interrogator, witnessId);
+    const { text: predText, systemPrompt: sp1 } = await generatePrediction(
+      s.transcript,
+      witnessRole,
+      {
+        user1: { id: s.user1, name: getName(s.user1) ?? 'user1', messages: (s.user1 === witnessId ? witnessProfile : interrogatorProfile).messages },
+        user2: { id: s.user2, name: getName(s.user2) ?? 'user2', messages: (s.user2 === witnessId ? witnessProfile : interrogatorProfile).messages },
+      },
+      text,
+      getAssessmentsWithMeta(),
+    );
     const prediction = stripEmoji(predText);
     s.pendingPrediction = prediction;
+    s.pendingSystemPrompt = sp1;
     s.lastSystemPrompt = sp1;
     s.pendingResponder = witnessId;
 
@@ -454,9 +510,13 @@ bot.on(message('text'), async (ctx) => {
 
     if (s.spectators.length > 0) {
       const interrogatorLabel = getName(s.interrogator)!;
-      await Promise.all(s.spectators.map(id =>
-        bot.telegram.sendMessage(id, `${interrogatorLabel} (interrogator): ${text}`)
-      ));
+      const msg = `${interrogatorLabel} (interrogator): ${text}`;
+      const blocked: number[] = [];
+      await Promise.all(s.spectators.map(async id => {
+        try { await bot.telegram.sendMessage(id, msg); }
+        catch (err: any) { if (err?.response?.error_code === 403) blocked.push(id); else throw err; }
+      }));
+      if (blocked.length > 0) s.spectators = s.spectators.filter(id => !blocked.includes(id));
     }
     return;
   }
@@ -472,8 +532,18 @@ bot.on(message('text'), async (ctx) => {
   const senderRole = userId === s.user1 ? 'user1' : 'user2';
   const partnerId = session.getPartner(s, userId);
 
-  const profile = getProfile(userId, partnerId);
-  const { text: predText2, systemPrompt: sp2 } = await generatePrediction(s.transcript, senderRole, profile.messages, undefined, getAssessments());
+  const senderProfile = getProfile(userId, partnerId);
+  const partnerProfile = getProfile(partnerId, userId);
+  const { text: predText2, systemPrompt: sp2 } = await generatePrediction(
+    s.transcript,
+    senderRole,
+    {
+      user1: { id: s.user1, name: getName(s.user1) ?? 'user1', messages: (s.user1 === userId ? senderProfile : partnerProfile).messages },
+      user2: { id: s.user2, name: getName(s.user2) ?? 'user2', messages: (s.user2 === userId ? senderProfile : partnerProfile).messages },
+    },
+    undefined,
+    getAssessmentsWithMeta(),
+  );
   const prediction = stripEmoji(predText2);
   s.lastSystemPrompt = sp2;
   appendMessage(userId, partnerId, text);

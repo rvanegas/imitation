@@ -2,12 +2,12 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 import Anthropic from '@anthropic-ai/sdk';
-import { getAssessments, setAssessments } from './userProfiles';
+import { getAllAssessments, setAssessments } from './userProfiles';
 
 const client = new Anthropic();
 
 async function main() {
-  const assessments = getAssessments();
+  const assessments = getAllAssessments();
   if (assessments.length === 0) {
     console.log('No assessments to compact.');
     return;

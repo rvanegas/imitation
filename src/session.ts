@@ -18,7 +18,7 @@ export function persistSessions(): void {
   const data = {
     sessions: Object.fromEntries(
       [...sessions.entries()].map(([id, s]) => {
-        const { timeoutHandle, ...rest } = s;
+        const { timeoutHandle, lastSystemPrompt, ...rest } = s;
         return [id, rest];
       })
     ),
@@ -91,6 +91,7 @@ export function acceptInvite(
     firstSender: initiator,
     interrogator: initiator,
     pendingPrediction: null,
+    pendingSystemPrompt: null,
     scores: { user1: 0, user2: 0 },
     teamScores: { humans: 0, model: 0 },
     currentRoundTurns: 0,
@@ -186,6 +187,7 @@ export function restartWithPlayers(
   s.firstSender = newUser1;
   s.interrogator = newUser1;
   s.pendingPrediction = null;
+  s.pendingSystemPrompt = null;
   s.scores = { user1: 0, user2: 0 };
   s.teamScores = { humans: 0, model: 0 };
   s.currentRoundTurns = 0;

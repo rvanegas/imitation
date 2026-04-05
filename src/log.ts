@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { GameSession, TranscriptEntry } from './types';
-import { getAssessments } from './userProfiles';
 
 const LOG_DIR = path.join(process.cwd(), 'logs');
 
@@ -39,14 +38,6 @@ function writeLog(session: GameSession, ended: boolean): void {
     `User 2: ${session.user2}`,
   ];
   if (ended) headerLines.push(`Ended: ${new Date().toISOString()}`);
-
-  const assessments = getAssessments();
-  headerLines.push('', '--- Assessments ---', '');
-  if (assessments.length === 0) {
-    headerLines.push('(none)');
-  } else {
-    assessments.forEach((a, i) => headerLines.push(`${i + 1}. ${a}`));
-  }
 
   headerLines.push('', '--- System Prompt ---', '');
   headerLines.push(session.lastSystemPrompt ?? '(not yet generated)');

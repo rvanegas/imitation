@@ -63,13 +63,14 @@ interface AssessmentRecord {
   sessionId: string;
   guessNumber: number;
   guesserId: UserId;
+  imitateeId: UserId;  // the user being imitated (0 = general/compacted)
   correct: boolean;
   timestamp: string;
 }
 
 export function appendAssessment(
   assessment: string,
-  meta: { sessionId: string; guessNumber: number; guesserId: UserId; correct: boolean }
+  meta: { sessionId: string; guessNumber: number; guesserId: UserId; imitateeId: UserId; correct: boolean }
 ): void {
   const store = loadStore();
   const list: AssessmentRecord[] = (store as Record<string, any>)['__assessments']?.list ?? [];
@@ -78,21 +79,27 @@ export function appendAssessment(
   saveStore(store);
 }
 
-export function getAssessments(): string[] {
+// Returns all assessment texts (used by compact.ts).
+export function getAllAssessments(): string[] {
   const list: AssessmentRecord[] = (loadStore() as Record<string, any>)['__assessments']?.list ?? [];
   return list.map(r => r.text);
 }
 
+// Returns assessments with imitatee metadata for labeled display in the system prompt.
+export function getAssessmentsWithMeta(): Array<{ text: string; imitateeId: UserId }> {
+  const list: AssessmentRecord[] = (loadStore() as Record<string, any>)['__assessments']?.list ?? [];
+  return list.map(r => ({ text: r.text, imitateeId: r.imitateeId }));
+}
+
 export function setAssessments(list: string[]): void {
   const store = loadStore();
-  // Preserve existing records' metadata; replace only the text of compacted entries.
-  // Since compact produces a fresh distilled list with no 1:1 mapping to originals,
-  // store them as new records without session metadata.
+  // Compacted entries are general lessons (imitateeId=0).
   const records: AssessmentRecord[] = list.map(text => ({
     text,
     sessionId: '',
     guessNumber: 0,
     guesserId: 0,
+    imitateeId: 0,
     correct: false,
     timestamp: new Date().toISOString(),
   }));

@@ -1,6 +1,26 @@
 import { Telegraf } from 'telegraf';
 import { GameSession, MessagePair, UserId } from './types';
 
+async function sendToSpectators(bot: Telegraf, session: GameSession, text: string): Promise<void> {
+  const blocked: UserId[] = [];
+  await Promise.all(
+    session.spectators.map(async (id: UserId) => {
+      try {
+        await bot.telegram.sendMessage(id, text);
+      } catch (err: any) {
+        if (err?.response?.error_code === 403) {
+          blocked.push(id);
+        } else {
+          throw err;
+        }
+      }
+    })
+  );
+  if (blocked.length > 0) {
+    session.spectators = session.spectators.filter(id => !blocked.includes(id));
+  }
+}
+
 export async function deliverToSender(
   bot: Telegraf,
   senderId: number,
@@ -34,9 +54,7 @@ export async function deliverToSpectators(
 ): Promise<void> {
   if (session.spectators.length === 0) return;
   const text = `${senderLabel}: ${human}\n${senderLabel} (imitation): ${prediction}`;
-  await Promise.all(
-    session.spectators.map((id: UserId) => bot.telegram.sendMessage(id, text))
-  );
+  await sendToSpectators(bot, session, text);
 }
 
 export async function deliverRoundResultToSpectators(
@@ -55,10 +73,9 @@ export async function deliverRoundResultToSpectators(
     : `User 1: ${scores.user1} | User 2: ${scores.user2}`;
   const text =
     `${guesserLabel} guessed ${verdict}. ${reveal}\n` +
-    `Score — ${scoreStr}`;
-  await Promise.all(
-    session.spectators.map((id: UserId) => bot.telegram.sendMessage(id, text))
-  );
+    `Score — ${scoreStr}\n\n` +
+    `Use /leave to stop watching.`;
+  await sendToSpectators(bot, session, text);
 }
 
 export async function deliverReveal(bot: Telegraf, session: GameSession): Promise<void> {

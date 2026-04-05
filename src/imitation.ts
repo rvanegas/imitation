@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { TranscriptEntry } from './types';
+import { TranscriptEntry, UserId } from './types';
 
 const client = new Anthropic();
 
@@ -13,82 +13,119 @@ Rules:
 - Do not use emojis under any circumstances.
 - Write only the predicted message. No explanation, no prefix.`;
 
-function buildSystemPrompt(priorMessages: string[], isOpener: boolean, selfFollow: boolean, assessments: string[]): string {
-  const openerGuidance = isOpener
-    ? '\nThe conversation has not started yet — you are generating an opening message. It must stand alone with no prior context. Default to a very short, casual opener. Do not ask a question or reference anything.'
-    : selfFollow
-    ? '\nThis user last spoke before an interruption (a scoring moment in the game). They are now sending their next message. The prior conversation is still context, but they are not replying to their own last message — predict something that moves the conversation forward naturally.'
-    : '';
+interface PlayerInfo {
+  id: number;
+  name: string;
+  messages: string[];
+}
 
-  if (priorMessages.length > 0) {
-    const examples = priorMessages.map((m, i) => `  ${i + 1}. ${m}`).join('\n');
-    let prompt = `${BASE_PROMPT}
+function buildSystemPrompt(
+  players: { user1: PlayerInfo; user2: PlayerInfo },
+  senderRole: 'user1' | 'user2',
+  isOpener: boolean,
+  selfFollow: boolean,
+  assessments: Array<{ text: string; imitateeId: UserId }>,
+): string {
+  const witness = players[senderRole];
+  const interrogatorRole = senderRole === 'user1' ? 'user2' : 'user1';
+  const interrogator = players[interrogatorRole];
 
-The following are real messages this user has sent in previous sessions. Use them ONLY to calibrate style — pay close attention to their typical message length, vocabulary, punctuation habits, use of emoji or slang, sentence structure, and any spelling or grammatical errors they make.
+  const sections: string[] = [];
 
-If this user makes spelling or grammatical mistakes, reproduce errors at a similar rate and of a similar type in your prediction. Do not silently correct their writing.
+  sections.push(`# Rules\n${BASE_PROMPT}`);
 
-Do NOT reproduce these messages verbatim, unless the message is a very short, context-free phrase (e.g. "hi", "yes", "ok") where repetition is natural. For anything longer or more specific, treat it as a writing sample only — never copy or closely paraphrase it, since each was written in response to a context you do not have.
-${openerGuidance}
-${examples}`;
-    if (assessments.length > 0) {
-      prompt += '\n\nLessons from previous imitation attempts:\n';
-      prompt += assessments.map(a => `- ${a}`).join('\n');
-    }
-    return prompt;
+  sections.push(
+    `# Players\nInterrogator: ${interrogator.id} (${interrogator.name})\nWitness (being imitated): ${witness.id} (${witness.name})`
+  );
+
+  const pastMessagesSections: string[] = [];
+  pastMessagesSections.push(
+    `The following are real messages each user has sent in previous sessions. Use them to understand their communication styles. ` +
+    `For the witness specifically, match their style exactly in your prediction — pay close attention to message length, vocabulary, punctuation, use of emoji or slang, sentence structure, and any spelling or grammatical errors they make. ` +
+    `Reproduce errors at a similar rate and of a similar type. Do not silently correct their writing.\n\n` +
+    `Do NOT reproduce any message verbatim, unless it is a very short, context-free phrase (e.g. "hi", "yes", "ok") where repetition is natural. ` +
+    `For anything longer or more specific, treat it as a writing sample only — never copy or closely paraphrase it, since each was written in response to a context you do not have.`
+  );
+  if (interrogator.messages.length > 0) {
+    const msgs = interrogator.messages.map((m, i) => `  ${i + 1}. ${m}`).join('\n');
+    pastMessagesSections.push(`## ${interrogator.id} (${interrogator.name})\n${msgs}`);
+  }
+  if (witness.messages.length > 0) {
+    const msgs = witness.messages.map((m, i) => `  ${i + 1}. ${m}`).join('\n');
+    pastMessagesSections.push(`## ${witness.id} (${witness.name})\n${msgs}`);
+  } else {
+    pastMessagesSections.push(
+      `## ${witness.id} (${witness.name})\n` +
+      `No prior messages from this user. Default to a very short, casual opener — one to five words is normal. Do not compose a full paragraph.`
+    );
+  }
+  sections.push(`# Past messages\n\n${pastMessagesSections.join('\n\n')}`);
+
+  const relevantAssessments = assessments.filter(
+    a => !a.imitateeId || a.imitateeId === 0 || a.imitateeId === witness.id
+  );
+  if (relevantAssessments.length > 0) {
+    const lines = relevantAssessments.map(a => {
+      const label = !a.imitateeId || a.imitateeId === 0 ? '[general]' : `[for ${witness.name}]`;
+      return `- ${label} ${a.text}`;
+    }).join('\n');
+    sections.push(`# Assessments\n${lines}`);
   }
 
-  let prompt = `${BASE_PROMPT}
-
-You have no prior messages from this user. Default to a very short, casual opener — one to five words is normal. Do not compose a full paragraph.`;
-  if (assessments.length > 0) {
-    prompt += '\n\nLessons from previous imitation attempts:\n';
-    prompt += assessments.map(a => `- ${a}`).join('\n');
+  if (isOpener) {
+    sections.push(
+      `# Task context\nThe conversation has not started yet — you are generating an opening message. It must stand alone with no prior context. Default to a very short, casual opener. Do not ask a question or reference anything.`
+    );
+  } else if (selfFollow) {
+    sections.push(
+      `# Task context\nThis user last spoke before an interruption (a scoring moment in the game). They are now sending their next message. The prior conversation is still context, but they are not replying to their own last message — predict something that moves the conversation forward naturally.`
+    );
   }
-  return prompt;
+
+  return sections.join('\n\n');
 }
 
 export async function generatePrediction(
   transcript: TranscriptEntry[],
   senderRole: 'user1' | 'user2',
-  priorMessages: string[],
+  players: { user1: PlayerInfo; user2: PlayerInfo },
   questionContext?: string,
-  assessments: string[] = [],
+  assessments: Array<{ text: string; imitateeId: UserId }> = [],
 ): Promise<{ text: string; systemPrompt: string }> {
   let prompt = '';
 
   if (transcript.length > 0) {
-    // Track the last human role so we can label model predictions correctly.
     let lastHumanRole: 'user1' | 'user2' | null = null;
     const lines: string[] = [];
     for (const entry of transcript) {
       if (entry.role === 'model') {
-        const imitationOf = lastHumanRole === 'user1' ? '[User 1 imitation]' : '[User 2 imitation]';
-        lines.push(`${imitationOf}: ${entry.content}`);
+        const imitated = lastHumanRole === 'user1' ? players.user1 : players.user2;
+        lines.push(`[${imitated.id} (${imitated.name}) imitation]: ${entry.content}`);
       } else if (entry.role === 'guess') {
         // skip guess entries — not part of the conversation context
       } else {
         lastHumanRole = entry.role;
-        const label = entry.role === 'user1' ? '[User 1]' : '[User 2]';
-        lines.push(`${label}: ${entry.content}`);
+        const p = players[entry.role];
+        lines.push(`[${p.id} (${p.name})]: ${entry.content}`);
       }
     }
     prompt = `Conversation so far:\n${lines.join('\n')}\n\n`;
   }
 
-  const label = senderRole === 'user1' ? '[User 1]' : '[User 2]';
+  const witness = players[senderRole];
+  const witnessLabel = `[${witness.id} (${witness.name})]`;
   if (questionContext) {
-    prompt += `The interrogator just asked: "${questionContext}"\n\nWhat would ${label} say in response?`;
+    prompt += `The interrogator just asked: "${questionContext}"\n\nWhat would ${witnessLabel} say in response?`;
   } else {
-    prompt += `What would ${label} say next?`;
+    prompt += `What would ${witnessLabel} say next?`;
   }
 
-  const realMessages = transcript.filter(e => e.role !== 'model');
+  const realMessages = transcript.filter(e => e.role !== 'model' && e.role !== 'guess');
   const isOpener = !questionContext && realMessages.length === 0;
   const lastRealRole = realMessages.at(-1)?.role ?? null;
   const selfFollow = !isOpener && !questionContext && lastRealRole === senderRole;
 
-  const systemPrompt = buildSystemPrompt(priorMessages, isOpener, selfFollow, assessments);
+  const systemPrompt = buildSystemPrompt(players, senderRole, isOpener, selfFollow, assessments);
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6';
   const response = await client.messages.create({
     model,
@@ -107,6 +144,7 @@ export async function generateAssessment(
   humanMessage: string,
   aiPrediction: string,
   correct: boolean,
+  imitateeId: number,
 ): Promise<string> {
   const outcome = correct
     ? 'The human correctly identified the AI — the imitation did not fool them.'
@@ -127,6 +165,8 @@ export async function generateAssessment(
     contextSection = `Conversation context available during prediction:\n${lines.join('\n')}\n\n`;
   }
 
+  const systemPrompt = `You are reflecting on an imitation attempt in a Turing Test. The user you were imitating has Telegram ID ${imitateeId}. Write your lesson in abstract style terms so it can be applied when imitating this specific user in the future.`;
+
   const prompt =
     `You just attempted to imitate a human in a Turing Test.\n\n` +
     `${contextSection}` +
@@ -140,6 +180,7 @@ export async function generateAssessment(
   const response = await client.messages.create({
     model,
     max_tokens: 256,
+    system: systemPrompt,
     messages: [{ role: 'user', content: prompt }],
   });
 

@@ -23,6 +23,7 @@ export interface GameSession {
   firstSender: UserId;            // symmetric only: who sends first in a round
   interrogator: UserId;           // original only: who is asking/guessing this round
   pendingPrediction: string | null; // original only: AI prediction stored between question and answer
+  pendingSystemPrompt: string | null; // original only: system prompt paired with pendingPrediction
   scores: { user1: number; user2: number };
   teamScores: { humans: number; model: number };  // original variation only
   currentRoundTurns: number;          // original: Q&A exchanges in the current round
