@@ -1,70 +1,66 @@
-import { Telegraf } from 'telegraf';
+import { Transport } from './transport';
 import { GameSession, MessagePair, UserId } from './types';
 
-async function sendToSpectators(bot: Telegraf, session: GameSession, text: string): Promise<void> {
-  const blocked: UserId[] = [];
+async function sendToSpectators(transport: Transport, session: GameSession, text: string): Promise<void> {
+  const failed: UserId[] = [];
   await Promise.all(
     session.spectators.map(async (id: UserId) => {
       try {
-        await bot.telegram.sendMessage(id, text);
-      } catch (err: any) {
-        if (err?.response?.error_code === 403) {
-          blocked.push(id);
-        } else {
-          throw err;
-        }
+        await transport.send(id, text);
+      } catch {
+        failed.push(id);
       }
     })
   );
-  if (blocked.length > 0) {
-    session.spectators = session.spectators.filter(id => !blocked.includes(id));
+  if (failed.length > 0) {
+    session.spectators = session.spectators.filter(id => !failed.includes(id));
   }
 }
 
 export async function deliverToSender(
-  bot: Telegraf,
-  senderId: number,
+  transport: Transport,
+  senderId: UserId,
   text: string,
-  prediction: string
+  prediction: string,
 ): Promise<void> {
-  await bot.telegram.sendMessage(senderId, `You: ${text}`);
-  await bot.telegram.sendMessage(senderId, `Model: ${prediction}`);
+  await transport.send(senderId, `You: ${text}`);
+  await transport.send(senderId, `Model: ${prediction}`);
 }
 
 export async function deliverToReceiver(
-  bot: Telegraf,
-  receiverId: number,
+  transport: Transport,
+  receiverId: UserId,
   pair: MessagePair,
-  imitationFirst: boolean
+  imitationFirst: boolean,
 ): Promise<void> {
   const [msgA, msgB] = imitationFirst
     ? [pair.prediction, pair.human]
     : [pair.human, pair.prediction];
 
-  await bot.telegram.sendMessage(receiverId, `A: ${msgA}`);
-  await bot.telegram.sendMessage(receiverId, `B: ${msgB}`);
+  await transport.send(receiverId, `A: ${msgA}`);
+  await transport.send(receiverId, `B: ${msgB}`);
 }
 
 export async function deliverToSpectators(
-  bot: Telegraf,
+  transport: Transport,
   session: GameSession,
   senderLabel: string,
   human: string,
-  prediction: string
+  prediction: string,
 ): Promise<void> {
   if (session.spectators.length === 0) return;
   const text = `${senderLabel}: ${human}\n${senderLabel} (imitation): ${prediction}`;
-  await sendToSpectators(bot, session, text);
+  await sendToSpectators(transport, session, text);
 }
 
 export async function deliverRoundResultToSpectators(
-  bot: Telegraf,
+  transport: Transport,
   session: GameSession,
   guesserLabel: string,
   correct: boolean,
   reveal: string,
   scores: { user1: number; user2: number },
-  teamScores?: { humans: number; model: number }
+  teamScores?: { humans: number; model: number },
 ): Promise<void> {
   if (session.spectators.length === 0) return;
   const verdict = correct ? 'correctly' : 'incorrectly';
@@ -75,14 +71,13 @@ export async function deliverRoundResultToSpectators(
     `${guesserLabel} guessed ${verdict}. ${reveal}\n` +
     `Score — ${scoreStr}\n\n` +
     `Use /leave to stop watching.`;
-  await sendToSpectators(bot, session, text);
+  await sendToSpectators(transport, session, text);
 }
 
-export async function deliverReveal(bot: Telegraf, session: GameSession): Promise<void> {
+export async function deliverReveal(transport: Transport, session: GameSession): Promise<void> {
   const reveal = session.imitationFirst
     ? 'A was always the AI. B was always human.'
     : 'A was always human. B was always the AI.';
-
-  await bot.telegram.sendMessage(session.user1, reveal);
-  await bot.telegram.sendMessage(session.user2, reveal);
+  await transport.send(session.user1, reveal);
+  await transport.send(session.user2, reveal);
 }
