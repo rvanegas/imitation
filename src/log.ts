@@ -42,7 +42,7 @@ function writeLog(session: GameSession, ended: boolean): void {
   headerLines.push('', '--- System Prompt ---', '');
   headerLines.push(session.lastSystemPrompt ?? '(not yet generated)');
 
-  headerLines.push('', '--- Transcript (as sent to model) ---', '');
+  headerLines.push('', '--- Transcript ---', '');
 
   fs.writeFileSync(filepath, headerLines.join('\n') + formatTranscript(session.transcript, session));
 }

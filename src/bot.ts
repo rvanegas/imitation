@@ -371,8 +371,10 @@ bot.command('human', async (ctx) => {
         imitateeId: imitateeId1,
         correct,
       };
-      generateAssessment(s.transcript.slice(0, -3), _humanEntry1.content, _modelEntry1.content, correct, imitateeId1)
-        .then(assessment => appendAssessment(assessment, _meta1))
+      generateAssessment(s.transcript.slice(0, -3), _humanEntry1.content, _modelEntry1.content, correct, {
+        user1: { id: s.user1, name: getName(s.user1) ?? 'user1', messages: [] },
+        user2: { id: s.user2, name: getName(s.user2) ?? 'user2', messages: [] },
+      }, s.lastSystemPrompt ?? '').then(assessment => appendAssessment(assessment, _meta1))
         .catch(() => {});
     }
 
@@ -409,8 +411,10 @@ bot.command('human', async (ctx) => {
         imitateeId: imitateeId2,
         correct,
       };
-      generateAssessment(s.transcript.slice(0, -3), _humanEntry2.content, _modelEntry2.content, correct, imitateeId2)
-        .then(assessment => appendAssessment(assessment, _meta2))
+      generateAssessment(s.transcript.slice(0, -3), _humanEntry2.content, _modelEntry2.content, correct, {
+        user1: { id: s.user1, name: getName(s.user1) ?? 'user1', messages: [] },
+        user2: { id: s.user2, name: getName(s.user2) ?? 'user2', messages: [] },
+      }, s.lastSystemPrompt ?? '').then(assessment => appendAssessment(assessment, _meta2))
         .catch(() => {});
     }
 

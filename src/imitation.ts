@@ -144,7 +144,8 @@ export async function generateAssessment(
   humanMessage: string,
   aiPrediction: string,
   correct: boolean,
-  imitateeId: number,
+  players: { user1: PlayerInfo; user2: PlayerInfo },
+  predictionSystemPrompt: string,
 ): Promise<string> {
   const outcome = correct
     ? 'The human correctly identified the AI — the imitation did not fool them.'
@@ -157,15 +158,19 @@ export async function generateAssessment(
     let lastHumanRole: 'user1' | 'user2' | null = null;
     const lines = priorEntries.map(e => {
       if (e.role === 'model') {
-        return `[${lastHumanRole === 'user1' ? 'User 1' : 'User 2'} imitation]: ${e.content}`;
+        const imitated = lastHumanRole === 'user1' ? players.user1 : players.user2;
+        return `[${imitated.id} (${imitated.name}) imitation]: ${e.content}`;
       }
       if (e.role !== 'guess') lastHumanRole = e.role;
-      return `[${e.role === 'user1' ? 'User 1' : 'User 2'}]: ${e.content}`;
+      const p = e.role === 'user1' ? players.user1 : players.user2;
+      return `[${p.id} (${p.name})]: ${e.content}`;
     });
     contextSection = `Conversation context available during prediction:\n${lines.join('\n')}\n\n`;
   }
 
-  const systemPrompt = `You are reflecting on an imitation attempt in a Turing Test. The user you were imitating has Telegram ID ${imitateeId}. Write your lesson in abstract style terms so it can be applied when imitating this specific user in the future.`;
+  const systemPrompt =
+    predictionSystemPrompt +
+    `\n\n# Reflection\nThe imitation attempt is over. Reflect on how well you did across all dimensions of human-likeness: surface style (length, tone, vocabulary, punctuation), content choices (what topics were raised, whether they matched this person's interests and register), and conversational pragmatics (whether your turn performed the right speech act, how well you tracked the flow of the exchange, whether you responded to what was actually being asked or offered). Prior lessons you have accumulated are listed above under # Assessments. Write a new lesson that builds on them — extending, refining, or updating what is already known rather than repeating it. If the new attempt confirms an existing lesson, note any new nuance; if it contradicts one, revise your understanding. Write in abstract terms applicable to future imitations of this witness. Do not reference the specific messages or conversation.`;
 
   const prompt =
     `You just attempted to imitate a human in a Turing Test.\n\n` +
@@ -173,8 +178,9 @@ export async function generateAssessment(
     `The human actually wrote: "${humanMessage}"\n` +
     `Your imitation was: "${aiPrediction}"\n\n` +
     `${outcome}\n\n` +
-    `In 2-3 sentences, assess what worked or didn't work in your imitation, and what you should do differently next time. ` +
-    `Write the lesson in abstract terms (style, length, tone, vocabulary, punctuation) — do not reference the specific messages or conversation, since the assessment will be read later without that context.`;
+    `In 3-4 sentences, assess what worked or didn't work across all dimensions: surface style (length, tone, vocabulary, punctuation), content (what topics or ideas were introduced, whether they suited this person's register and interests), and conversational pragmatics (whether your turn performed the right speech act, how well your response aligned with what preceded it, and whether your informativeness level matched the register of the exchange). ` +
+    `Consider the prior lessons already recorded above — write something that adds new insight or refines existing understanding, not a repetition of what is already known. ` +
+    `Write in abstract terms applicable to future imitations of this witness — do not reference the specific messages or conversation, since the assessment will be read later without that context.`;
 
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6';
   const response = await client.messages.create({
