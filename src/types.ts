@@ -42,6 +42,7 @@ export interface MessagePair {
 export interface UserProfile {
   messages: string[];
   name?: string;
+  telegramId?: number;
 }
 
 export interface UserProfileStore {

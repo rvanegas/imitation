@@ -4,3 +4,4 @@ dist/
 .env
 sessions.json
 user_profiles.json
+*.bak

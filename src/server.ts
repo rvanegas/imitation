@@ -3,12 +3,22 @@ import * as fs from 'fs';
 import { Transport } from './transport';
 import { UserId } from './types';
 import * as engine from './engine';
-import { getName, setName, getUserIdByName } from './userProfiles';
+import { getName, getOrCreateUserIdByName, getTelegramId } from './userProfiles';
 
 const SOCKET_PATH = process.env.SOCKET_PATH ?? '/tmp/imitation.sock';
 
-class ServerTransport implements Transport {
+class CombinedTransport implements Transport {
   private sockets = new Map<UserId, net.Socket>();
+  private telegramSend: ((userId: UserId, text: string) => Promise<void>) | null = null;
+  private botUsername = '';
+
+  setTelegramSend(fn: (userId: UserId, text: string) => Promise<void>): void {
+    this.telegramSend = fn;
+  }
+
+  setBotUsername(name: string): void {
+    this.botUsername = name;
+  }
 
   register(userId: UserId, socket: net.Socket): void {
     this.sockets.set(userId, socket);
@@ -22,36 +32,36 @@ class ServerTransport implements Transport {
     const socket = this.sockets.get(userId);
     if (socket?.writable) {
       socket.write(JSON.stringify({ type: 'msg', text }) + '\n');
+      return;
+    }
+    if (this.telegramSend) {
+      await this.telegramSend(userId, text);
     }
   }
 
   makeInviteLink(token: string): string {
+    if (this.botUsername) return `https://t.me/${this.botUsername}?start=${token}`;
     return token;
   }
 }
 
-export function start(): void {
-  const transport = new ServerTransport();
+export function start(telegram: boolean): void {
+  const transport = new CombinedTransport();
   engine.initSessions(transport);
 
-  // Track in-memory name→id assignments for this server session.
-  const nameToId = new Map<string, UserId>();
-  let nextId = 1;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let bot: any = null;
 
-  function getOrCreateUser(name: string): UserId {
-    if (nameToId.has(name)) return nameToId.get(name)!;
-    // Reuse persisted ID from a previous run if the name is known.
-    const persisted = getUserIdByName(name);
-    if (persisted !== undefined) {
-      nameToId.set(name, persisted);
-      return persisted;
-    }
-    // Assign a new ID, skipping any already claimed by persisted users.
-    while (getUserIdByName(getName(nextId) ?? '') !== undefined) nextId++;
-    const id = nextId++;
-    nameToId.set(name, id);
-    setName(id, name);
-    return id;
+  if (telegram) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { setupTelegram } = require('./bot');
+    bot = setupTelegram(transport, (name: string) => transport.setBotUsername(name));
+    transport.setTelegramSend(async (userId, text) => {
+      const chatId = getTelegramId(userId);
+      if (chatId !== undefined) await bot.telegram.sendMessage(chatId, text);
+    });
+    bot.launch();
+    console.log('Telegram bot running.');
   }
 
   async function dispatch(userId: UserId, text: string): Promise<void> {
@@ -77,6 +87,8 @@ export function start(): void {
           break;
         }
         case 'human':   await engine.handleHuman(userId, args[0] ?? '', transport); break;
+        case 'a':       await engine.handleHuman(userId, 'A', transport); break;
+        case 'b':       await engine.handleHuman(userId, 'B', transport); break;
         case 'invite':  await engine.handleInvite(userId, transport); break;
         case 'status':  await engine.handleStatus(userId, transport); break;
         case 'stop':    await engine.handleStop(userId, transport); break;
@@ -115,7 +127,7 @@ export function start(): void {
             socket.write(JSON.stringify({ type: 'error', text: 'Name required.' }) + '\n');
             continue;
           }
-          userId = getOrCreateUser(name);
+          userId = getOrCreateUserIdByName(name);
           transport.register(userId, socket);
           socket.write(JSON.stringify({ type: 'ready', name: getName(userId) ?? name }) + '\n');
           continue;
@@ -144,10 +156,11 @@ export function start(): void {
 
   server.listen(SOCKET_PATH, () => {
     console.log(`Imitation server listening on ${SOCKET_PATH}`);
-    console.log('Connect with:  npm run dev client <name>');
+    console.log('Connect with:  npm run dev terminal <name>');
   });
 
   function shutdown(): void {
+    if (bot) bot.stop('SIGINT');
     server.close();
     if (fs.existsSync(SOCKET_PATH)) fs.unlinkSync(SOCKET_PATH);
     process.exit(0);

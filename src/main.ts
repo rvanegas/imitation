@@ -4,33 +4,21 @@ dotenv.config();
 const [,, cmd, ...args] = process.argv;
 
 function usage(): never {
-  console.error('Usage: npm run dev <bot|server|terminal|client> [args]');
+  console.error('Usage: npm run dev <server [--no-telegram|-t] | terminal <name>>');
   process.exit(1);
 }
 
 switch (cmd) {
-  case 'bot': {
+  case 'server': {
+    const noTelegram = args.includes('--no-telegram') || args.includes('-t');
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { bot, initSessions } = require('./bot');
-    initSessions();
-    bot.launch();
-    console.log('Bot running.');
-    process.once('SIGINT', () => bot.stop('SIGINT'));
-    process.once('SIGTERM', () => bot.stop('SIGTERM'));
+    require('./server').start(!noTelegram);
     break;
   }
-  case 'server':
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    require('./server').start();
-    break;
-  case 'terminal':
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    require('./terminal').start();
-    break;
-  case 'client': {
+  case 'terminal': {
     const name = args[0];
     if (!name) {
-      console.error('Usage: npm run dev client <name>');
+      console.error('Usage: npm run dev terminal <name>');
       process.exit(1);
     }
     // eslint-disable-next-line @typescript-eslint/no-require-imports

@@ -21,21 +21,18 @@ function saveState(s: GameSession): void {
   session.persistSessions();
 }
 
-export function makeOnTimeout(transport: Transport): (s: GameSession) => Promise<void> {
-  return async (s: GameSession) => {
+export function initSessions(transport: Transport): void {
+  session.setTimeoutCallback(async (s: GameSession) => {
     await transport.send(s.user1, 'Session timed out after 1 hour.');
     await transport.send(s.user2, 'Session timed out after 1 hour.');
     logSession(s);
     session.endSession(s);
-  };
-}
-
-export function initSessions(transport: Transport): void {
-  session.loadPersistedSessions(makeOnTimeout(transport));
+  });
+  session.loadPersistedSessions();
 }
 
 export const HELP_TEXT =
-  '/start — Create a new game or join via invite\n' +
+  '/start — Create a new Original Turing Test game (/start symmetric for the symmetric variation)\n' +
   '/human A|B — Guess which message was written by the human\n' +
   '/invite — Get the session invite; first to join becomes player 2, others watch\n' +
   '/status — Show current turn, score, and spectator count\n' +
@@ -70,22 +67,24 @@ export async function handleJoin(
     return;
   }
 
-  if (session.getSessionForUser(userId)) {
-    await transport.send(userId, 'You are already in a game. Use /stop to end it first.');
-    return;
+  const existing = session.getSessionForUser(userId);
+  if (existing) {
+    const partnerId = session.getPartner(existing, userId);
+    session.endSession(existing);
+    await transport.send(partnerId, 'Your partner left to join another game. Use /start to begin a new game.');
   }
 
-  const onTimeout = makeOnTimeout(transport);
-
-  const joined = session.acceptInvite(token, userId, onTimeout);
+  const joined = session.acceptInvite(token, userId);
   if (joined) {
     getOrAssignName(userId);
     if (joined.variation === 'original') {
-      await transport.send(joined.user1, 'Game started! You are the interrogator — ask your first question.\n\n' + HELP_TEXT);
-      await transport.send(joined.user2, 'Game started! Your partner is the interrogator. Wait for their first question.\n\n' + HELP_TEXT);
+      await transport.send(joined.user2, HELP_TEXT);
+      await transport.send(joined.user1, 'Game started! You are the interrogator — ask your first question.');
+      await transport.send(joined.user2, 'Game started! Your partner is the interrogator. Wait for their first question.');
     } else {
-      await transport.send(joined.user1, 'Game started! You send the first message.\n\n' + HELP_TEXT);
-      await transport.send(joined.user2, 'Game started! Your partner sends the first message.\n\n' + HELP_TEXT);
+      await transport.send(joined.user2, HELP_TEXT);
+      await transport.send(joined.user1, 'Game started! You send the first message.');
+      await transport.send(joined.user2, 'Game started! Your partner sends the first message.');
     }
     return;
   }
@@ -94,7 +93,8 @@ export async function handleJoin(
   if (watched) {
     getOrAssignName(userId);
     const spectatorCount = watched.spectators.length;
-    await transport.send(userId, 'You are now watching this game as a spectator.\n\n' + HELP_TEXT);
+    await transport.send(userId, HELP_TEXT);
+    await transport.send(userId, 'You are now watching this game as a spectator.');
     const notice = `A spectator joined. Spectators watching: ${spectatorCount}`;
     await Promise.all([watched.user1, watched.user2].map(id => transport.send(id, notice)));
     return;
@@ -114,6 +114,11 @@ export async function handleSetName(userId: UserId, name: string, transport: Tra
       userId,
       'Invalid name. Must start with a letter or underscore, contain only letters, digits, or underscores, and be 1–32 characters long.',
     );
+    return;
+  }
+  const existing = getUserIdByName(name);
+  if (existing !== undefined && existing !== userId) {
+    await transport.send(userId, `Name "${name}" is already taken.`);
     return;
   }
   setName(userId, name);
@@ -140,23 +145,33 @@ export async function handleStatus(userId: UserId, transport: Transport): Promis
   const name1 = getName(s.user1) ?? 'user1';
   const name2 = getName(s.user2) ?? 'user2';
 
+  const interrogatorId = s.variation === 'original'
+    ? s.interrogator
+    : (s.firstSender === s.user1 ? s.user2 : s.user1);
+  const interrogatorName = interrogatorId === s.user1 ? name1 : name2;
+  const interrogatorLabel = isSpectator ? interrogatorName : (interrogatorId === userId ? 'you' : interrogatorName);
+  const interrogatorLine = `Interrogator: ${interrogatorLabel}`;
+
   let turnLine: string;
   if (isSpectator) {
     if (s.variation === 'original') {
-      turnLine = s.pendingResponder !== null
-        ? 'Waiting for the witness to answer.'
-        : 'Waiting for the interrogator to ask a question.';
+      const witnessName = s.pendingResponder !== null ? (s.pendingResponder === s.user1 ? name1 : name2) : null;
+      turnLine = witnessName !== null
+        ? `Waiting for ${witnessName} to answer.`
+        : `Waiting for ${interrogatorName} to ask a question.`;
     } else {
-      turnLine = s.pendingResponder === null
-        ? 'Waiting for a message.'
-        : 'Waiting for a guess.';
+      const senderName = s.firstSender === s.user1 ? name1 : name2;
+      const pendingName = s.pendingResponder !== null ? (s.pendingResponder === s.user1 ? name1 : name2) : null;
+      turnLine = pendingName !== null
+        ? `Waiting for ${pendingName} to guess.`
+        : `Waiting for ${senderName} to send a message.`;
     }
   } else if (s.variation === 'original') {
     const isInterrogator = userId === s.interrogator;
     if (s.pendingResponder !== null) {
       turnLine = isInterrogator ? 'Waiting for your partner to answer.' : 'Your turn to answer.';
     } else {
-      turnLine = isInterrogator ? 'Your turn to ask a question.' : 'Waiting for your partner to ask a question.';
+      turnLine = isInterrogator ? 'Your turn to ask a question.' : `Waiting for ${interrogatorName} to ask a question.`;
     }
   } else {
     if (s.pendingResponder === null) {
@@ -185,7 +200,7 @@ export async function handleStatus(userId: UserId, transport: Transport): Promis
     : `Spectators: ${spectatorNames.join(', ')}`;
   const playersLine = `Players: ${name1}, ${name2}`;
 
-  await transport.send(userId, `${playersLine}\n${turnLine}\n${scoreLine}\n${spectatorLine}`);
+  await transport.send(userId, `${playersLine}\n${interrogatorLine}\n${turnLine}\n${scoreLine}\n${spectatorLine}`);
 }
 
 export async function handleRestart(
@@ -214,8 +229,7 @@ export async function handleRestart(
   if (!allParticipants.includes(id1)) { await transport.send(userId, `${name1} is not in this session.`); return; }
   if (!allParticipants.includes(id2)) { await transport.send(userId, `${name2} is not in this session.`); return; }
 
-  const onTimeout = makeOnTimeout(transport);
-  session.restartWithPlayers(s, id1, id2, onTimeout);
+  session.restartWithPlayers(s, id1, id2);
 
   const msg1 = s.variation === 'original'
     ? 'Game restarted! You are the interrogator — ask your first question.'
@@ -333,6 +347,7 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
     }
 
     await deliverRoundResultToSpectators(transport, s, guesserLabel, correct, reveal, s.scores, s.teamScores);
+    session.touchSession(s);
     session.reshuffle(s);
 
     const youAreNewInterrogator = s.interrogator === userId;
@@ -367,6 +382,7 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
     }
 
     await deliverRoundResultToSpectators(transport, s, guesserLabel, correct, reveal, s.scores);
+    session.touchSession(s);
     session.reshuffle(s);
 
     const youGoFirst = s.firstSender === userId;
@@ -396,8 +412,6 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
   const stripped = stripEmoji(text);
   if (!stripped) return;
 
-  const onTimeout = makeOnTimeout(transport);
-
   if (s.variation === 'original') {
     const witnessId = session.getPartner(s, s.interrogator);
 
@@ -406,7 +420,7 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
         await transport.send(userId, 'Waiting for your partner to respond.');
         return;
       }
-      session.touchSession(s, onTimeout);
+      session.touchSession(s);
 
       const prediction = stripEmoji(s.pendingPrediction!);
       const witnessRole = witnessId === s.user1 ? 'user1' : 'user2';
@@ -432,7 +446,7 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
       await transport.send(userId, 'Waiting for your partner to ask a question.');
       return;
     }
-    session.touchSession(s, onTimeout);
+    session.touchSession(s);
 
     const witnessRole = witnessId === s.user1 ? 'user1' : 'user2';
     const witnessProfile = getProfile(witnessId, s.interrogator);
@@ -479,7 +493,7 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
     return;
   }
 
-  session.touchSession(s, onTimeout);
+  session.touchSession(s);
 
   const senderRole = userId === s.user1 ? 'user1' : 'user2';
   const partnerId = session.getPartner(s, userId);

@@ -10,6 +10,25 @@ const spectatorToSession = new Map<UserId, string>();
 const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 const SESSIONS_FILE = path.join(process.cwd(), 'sessions.json');
 
+let timeoutCallback: ((s: GameSession) => Promise<void>) | null = null;
+
+export function setTimeoutCallback(fn: (s: GameSession) => Promise<void>): void {
+  timeoutCallback = fn;
+}
+
+function scheduleTimeout(s: GameSession): void {
+  const elapsed = Date.now() - (s.lastActivity ?? 0);
+  const remaining = Math.max(SESSION_TIMEOUT_MS - elapsed, 0);
+  s.timeoutHandle = setTimeout(async () => {
+    const idle = Date.now() - (s.lastActivity ?? 0);
+    if (idle >= SESSION_TIMEOUT_MS) {
+      await timeoutCallback!(s);
+    } else {
+      scheduleTimeout(s);
+    }
+  }, remaining);
+}
+
 function generateToken(): string {
   return Math.random().toString(36).slice(2, 8);
 }
@@ -27,7 +46,7 @@ export function persistSessions(): void {
   fs.writeFileSync(SESSIONS_FILE, JSON.stringify(data, null, 2));
 }
 
-export function loadPersistedSessions(onTimeout: (session: GameSession) => void): void {
+export function loadPersistedSessions(): void {
   let data: any;
   try {
     data = JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8'));
@@ -41,13 +60,13 @@ export function loadPersistedSessions(onTimeout: (session: GameSession) => void)
 
   for (const [id, persisted] of Object.entries<any>(data.sessions ?? {})) {
     const elapsed = Date.now() - (persisted.lastActivity ?? 0);
-    const remaining = Math.max(0, SESSION_TIMEOUT_MS - elapsed);
-    const session: GameSession = { ...persisted, timeoutHandle: null as any };
-    session.timeoutHandle = setTimeout(() => onTimeout(session), remaining);
-    sessions.set(id, session);
-    userToSession.set(session.user1, id);
-    userToSession.set(session.user2, id);
-    for (const spectatorId of session.spectators ?? []) {
+    if (elapsed >= SESSION_TIMEOUT_MS) continue;
+    const s: GameSession = { ...persisted, timeoutHandle: null as any };
+    scheduleTimeout(s);
+    sessions.set(id, s);
+    userToSession.set(s.user1, id);
+    userToSession.set(s.user2, id);
+    for (const spectatorId of s.spectators ?? []) {
       spectatorToSession.set(spectatorId, id);
     }
   }
@@ -65,11 +84,7 @@ export function isOwnInvite(token: string, userId: UserId): boolean {
   return entry !== undefined && entry.userId === userId;
 }
 
-export function acceptInvite(
-  token: string,
-  userId: UserId,
-  onTimeout: (session: GameSession) => void
-): GameSession | null {
+export function acceptInvite(token: string, userId: UserId): GameSession | null {
   const entry = pendingSessions.get(token);
   if (entry === undefined) return null;
 
@@ -78,14 +93,14 @@ export function acceptInvite(
 
   pendingSessions.delete(token);
 
-  const session: GameSession = {
+  const s: GameSession = {
     id: token,
     user1: initiator,
     user2: userId,
     status: 'active',
     variation,
     imitationFirst: Math.random() < 0.5,
-    timeoutHandle: setTimeout(() => onTimeout(session), SESSION_TIMEOUT_MS),
+    timeoutHandle: null as any,
     transcript: [],
     pendingResponder: variation === 'original' ? null : initiator,
     firstSender: initiator,
@@ -101,12 +116,13 @@ export function acceptInvite(
     lastActivity: Date.now(),
   };
 
-  sessions.set(session.id, session);
-  userToSession.set(initiator, session.id);
-  userToSession.set(userId, session.id);
+  scheduleTimeout(s);
+  sessions.set(s.id, s);
+  userToSession.set(initiator, s.id);
+  userToSession.set(userId, s.id);
 
   persistSessions();
-  return session;
+  return s;
 }
 
 export function addSpectator(sessionId: string, userId: UserId): GameSession | null {
@@ -141,10 +157,8 @@ export function addToTranscript(session: GameSession, role: SenderRole, content:
   session.transcript.push({ role, content });
 }
 
-export function touchSession(session: GameSession, onTimeout: (session: GameSession) => void): void {
-  clearTimeout(session.timeoutHandle);
-  session.timeoutHandle = setTimeout(() => onTimeout(session), SESSION_TIMEOUT_MS);
-  session.lastActivity = Date.now();
+export function touchSession(s: GameSession): void {
+  s.lastActivity = Date.now();
   persistSessions();
 }
 
@@ -166,7 +180,6 @@ export function restartWithPlayers(
   s: GameSession,
   newUser1: UserId,
   newUser2: UserId,
-  onTimeout: (session: GameSession) => void
 ): void {
   userToSession.delete(s.user1);
   userToSession.delete(s.user2);
@@ -196,7 +209,7 @@ export function restartWithPlayers(
   s.lastActivity = Date.now();
 
   clearTimeout(s.timeoutHandle);
-  s.timeoutHandle = setTimeout(() => onTimeout(s), SESSION_TIMEOUT_MS);
+  scheduleTimeout(s);
 
   persistSessions();
 }

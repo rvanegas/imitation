@@ -31,11 +31,50 @@ export function getName(userId: UserId): string | undefined {
 export function getUserIdByName(name: string): UserId | undefined {
   const store = loadStore();
   for (const [key, profile] of Object.entries(store)) {
-    if (!key.includes(':') && profile.name === name) {
+    if (!key.includes(':') && !key.startsWith('__') && profile.name?.toLowerCase() === name.toLowerCase()) {
       return parseInt(key, 10);
     }
   }
   return undefined;
+}
+
+export function getTelegramId(userId: UserId): number | undefined {
+  const store = loadStore() as Record<string, any>;
+  return store[userId.toString()]?.telegramId;
+}
+
+export function getUserIdByTelegramId(telegramId: number): UserId | undefined {
+  const store = loadStore() as Record<string, any>;
+  for (const [key, profile] of Object.entries(store)) {
+    if (!key.includes(':') && !key.startsWith('__') && profile.telegramId === telegramId) {
+      return parseInt(key, 10);
+    }
+  }
+  return undefined;
+}
+
+// Returns the server-assigned UserId for a Telegram user, creating one if needed.
+export function getOrCreateUserIdForTelegram(telegramId: number): UserId {
+  const existing = getUserIdByTelegramId(telegramId);
+  if (existing !== undefined) return existing;
+  const store = loadStore() as Record<string, any>;
+  const id: UserId = store['__nextId'] ?? 1;
+  store['__nextId'] = id + 1;
+  store[id.toString()] = { messages: [], telegramId };
+  saveStore(store as UserProfileStore);
+  return id;
+}
+
+// Returns the server-assigned UserId for a named terminal user, creating one if needed.
+export function getOrCreateUserIdByName(name: string): UserId {
+  const existing = getUserIdByName(name);
+  if (existing !== undefined) return existing;
+  const store = loadStore() as Record<string, any>;
+  const id: UserId = store['__nextId'] ?? 1;
+  store['__nextId'] = id + 1;
+  store[id.toString()] = { messages: [], name };
+  saveStore(store as UserProfileStore);
+  return id;
 }
 
 export function getOrAssignName(userId: UserId): string {
@@ -46,7 +85,7 @@ export function getOrAssignName(userId: UserId): string {
   const counter = ((store as Record<string, any>)['__counter'] ?? 0) + 1;
   (store as Record<string, any>)['__counter'] = counter;
   const name = `user${counter}`;
-  store[key] = { messages: store[key]?.messages ?? [], name };
+  store[key] = { ...store[key], messages: store[key]?.messages ?? [], name };
   saveStore(store);
   return name;
 }

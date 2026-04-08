@@ -5,9 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run dev      # Run with ts-node (no build needed)
-npm run build    # Compile TypeScript to dist/
-npm run start    # Run compiled output from dist/
+npm run dev server              # Run server with Telegram bot
+npm run dev server --no-telegram  # Run server without Telegram (socket only)
+npm run dev server -t           # Same as --no-telegram
+npm run dev terminal <name>     # Connect a named terminal client to the server
+npm run build                   # Compile TypeScript to dist/
+npm run start                   # Run compiled output from dist/
 ```
 
 No test suite exists. There is no linter configured beyond TypeScript strict mode.
@@ -15,35 +18,56 @@ No test suite exists. There is no linter configured beyond TypeScript strict mod
 ## Environment
 
 Requires a `.env` file (see `.env.example`):
-- `BOT_TOKEN` — Telegram bot token
+- `BOT_TOKEN` — Telegram bot token (optional if running with `--no-telegram`)
 - `ANTHROPIC_API_KEY` — Anthropic API key
+- `SOCKET_PATH` — Unix socket path (default: `/tmp/imitation.sock`)
 
 `user_profiles.json` is generated at runtime and persists user message history across restarts.
+`sessions.json` is generated at runtime and persists active sessions across restarts.
 
 ## Architecture
 
-This is a Telegram bot implementing an Imitation Game (Turing Test). Two players chat, and after each message the AI generates what it predicts the sender would have written. The receiver sees two options (A and B, one human, one AI) and guesses which is human.
+This is a game implementing the Imitation Game (Turing Test) in two variations. Two players chat, and after each message the AI generates what it predicts the sender would have written. The receiver sees two options (A and B, one human, one AI) and guesses which is human.
 
-**Game flow:**
-1. Player A sends `/start` → gets an invite link
-2. Player B joins via link → game begins
-3. Sender writes a message → `imitation.ts` generates a blind AI prediction of that message
-4. `delivery.ts` sends both versions to the receiver (randomized A/B order)
-5. Receiver guesses with `/human A` or `/human B`
-6. Score updates, roles reshuffle via `session.ts`
+**Game variations:**
+- **Symmetric** — both players alternate sending and guessing
+- **Original Turing Test** — one player is the interrogator who asks questions and guesses; the other is the witness who answers
+
+**Game flow (symmetric):**
+1. Player A sends `/start symmetric` → gets an invite token
+2. Player B joins via token → game begins; Player A sends first
+3. Sender writes a message → `imitation.ts` generates a blind AI prediction
+4. `delivery.ts` sends both to the receiver (randomized A/B order)
+5. Receiver guesses with `/human A` or `/human B` (or `/a`/`/b`)
+6. Score updates, roles alternate via `session.ts`
 
 **Key files:**
-- `src/bot.ts` — All Telegram command handlers (`/start`, `/invite`, `/stop`, `/human`) and message routing
-- `src/imitation.ts` — Claude API call that generates predictions; builds a system prompt using prior messages as style samples
-- `src/session.ts` — In-memory session state (lost on restart), invite flow, spectator tokens, 1-hour timeout
-- `src/delivery.ts` — Routes messages to sender (shows their message + AI prediction), receiver (shows A/B choice), and spectators
-- `src/userProfiles.ts` — Reads/writes `user_profiles.json`; stores up to 1MB of prior messages per user pair for style calibration
+- `src/main.ts` — Entry point; dispatches to `server` or `terminal` subcommand
+- `src/engine.ts` — All game logic handlers (`handleMessage`, `handleHuman`, `handleJoin`, etc.); transport-agnostic
+- `src/transport.ts` — `Transport` interface (`send`, `makeInviteLink`)
+- `src/server.ts` — Runs the Unix socket server + optional Telegram bot; `CombinedTransport` tries socket first, falls back to Telegram
+- `src/bot.ts` — Telegraf bot setup; maps Telegram commands to `engine` handlers
+- `src/terminal.ts` — Interactive single-process terminal UI (multi-user via `:as <name>` meta-command); used for local testing
+- `src/client.ts` — Terminal client that connects to the socket server (for multi-process testing or real multi-user use)
+- `src/imitation.ts` — Claude API calls: `generatePrediction` and `generateAssessment`
+- `src/session.ts` — Session state, invite flow, persistence to `sessions.json`, 1-hour timeout
+- `src/delivery.ts` — Routes messages to sender (shows their message + AI prediction), receiver (A/B choice), and spectators
+- `src/userProfiles.ts` — Reads/writes `user_profiles.json`; stores prior messages per user pair for style calibration
 - `src/types.ts` — Shared TypeScript interfaces (`GameSession`, `TranscriptEntry`, `MessagePair`, `UserProfile`)
+- `src/log.ts` — Session logging
+- `src/migrate.ts` — Data migration utility
 
 **Key state in `GameSession`:**
+- `variation` — `'symmetric'` or `'original'`
 - `imitationFirst` — randomized each round; determines whether A=AI/B=human or vice versa
-- `pendingResponder` — whose turn it is to respond
-- `firstSender` — alternates each round for fair play
-- `spectators` — array of chat IDs watching read-only
+- `pendingResponder` — symmetric: whose turn to guess; original: `null`=interrogator's turn, `witnessId`=answer phase
+- `firstSender` — symmetric only: who sends first in a round
+- `interrogator` — original only: who is asking/guessing this round
+- `pendingPrediction` / `pendingSystemPrompt` — original only: stored between question and answer
+- `scores` — per-player scores (symmetric)
+- `teamScores` — humans vs. model scores (original)
 
-**AI prediction prompt (in `imitation.ts`):** Instructs Claude to impersonate the human sender using their prior messages as style examples. The prompt explicitly handles opening moves, consecutive turns (interruptions), spelling/grammar matching, and forbids Claude from identifying itself as AI.
+**Commands available in-game:**
+`/start`, `/human A|B`, `/a`, `/b`, `/invite`, `/status`, `/stop`, `/leave`, `/restart <u1> <u2>`, `/setname <name>`, `/help`
+
+**AI prediction prompt (in `imitation.ts`):** Instructs Claude to impersonate the human sender using their prior messages as style examples. The prompt explicitly handles opening moves, consecutive turns (interruptions), spelling/grammar matching, and forbids Claude from identifying itself as AI. After each round, `generateAssessment` is called asynchronously to analyze prediction quality and store results via `appendAssessment`.

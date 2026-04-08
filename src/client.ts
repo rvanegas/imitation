@@ -55,7 +55,7 @@ export function start(name: string): void {
 
   socket.on('error', (err) => {
     console.error(`Cannot connect to server at ${SOCKET_PATH}: ${err.message}`);
-    console.error('Start the server first:  npm run dev server');
+    console.error('Start the server first:  npm run dev server [--no-telegram|-t]');
     process.exit(1);
   });
 

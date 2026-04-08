@@ -10,6 +10,7 @@ This is a Turing test: the recipient of your message will try to determine wheth
 Rules:
 - Always produce a message. Never ask for clarification or more context, unless the human were predicted to do so.
 - Match the specified user's tone, style, and length exactly.
+- Write in the same language as the witness's messages. If no prior messages exist, use the language of the current conversation.
 - Do not use emojis under any circumstances.
 - Write only the predicted message. No explanation, no prefix.`;
 
@@ -41,7 +42,7 @@ function buildSystemPrompt(
   const pastMessagesSections: string[] = [];
   pastMessagesSections.push(
     `The following are real messages each user has sent in previous sessions. Use them to understand their communication styles. ` +
-    `For the witness specifically, match their style exactly in your prediction — pay close attention to message length, vocabulary, punctuation, use of emoji or slang, sentence structure, and any spelling or grammatical errors they make. ` +
+    `For the witness specifically, match their style exactly in your prediction — pay close attention to message length, vocabulary, punctuation, use of slang, sentence structure, and any spelling or grammatical errors they make. ` +
     `Reproduce errors at a similar rate and of a similar type. Do not silently correct their writing.\n\n` +
     `Do NOT reproduce any message verbatim, unless it is a very short, context-free phrase (e.g. "hi", "yes", "ok") where repetition is natural. ` +
     `For anything longer or more specific, treat it as a writing sample only — never copy or closely paraphrase it, since each was written in response to a context you do not have.`
@@ -170,7 +171,7 @@ export async function generateAssessment(
 
   const systemPrompt =
     predictionSystemPrompt +
-    `\n\n# Reflection\nThe imitation attempt is over. Reflect on how well you did across all dimensions of human-likeness: surface style (length, tone, vocabulary, punctuation), content choices (what topics were raised, whether they matched this person's interests and register), and conversational pragmatics (whether your turn performed the right speech act, how well you tracked the flow of the exchange, whether you responded to what was actually being asked or offered). Prior lessons you have accumulated are listed above under # Assessments. Write a new lesson that builds on them — extending, refining, or updating what is already known rather than repeating it. If the new attempt confirms an existing lesson, note any new nuance; if it contradicts one, revise your understanding. Write in abstract terms applicable to future imitations of this witness. Do not reference the specific messages or conversation.`;
+    `\n\n# Reflection\nThe imitation attempt is over. Reflect on how well you did across all dimensions of human-likeness: surface style (length, tone, vocabulary, punctuation), content choices (what topics were raised, whether they matched this person's interests and register), and conversational pragmatics (whether your turn performed the right speech act, how well you tracked the flow of the exchange, whether you responded to what was actually being asked or offered). Prior lessons you have accumulated are listed above under # Assessments. Write a new lesson that builds on them — extending, refining, or updating what is already known rather than repeating it. If the new attempt confirms an existing lesson, note any new nuance; if it contradicts one, revise your understanding. Write in abstract terms applicable to future imitations of this witness. Do not reference the specific messages or conversation. Write in English regardless of the conversation language, so assessments remain consistent across sessions.`;
 
   const prompt =
     `You just attempted to imitate a human in a Turing Test.\n\n` +
