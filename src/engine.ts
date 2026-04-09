@@ -23,8 +23,6 @@ function saveState(s: GameSession): void {
 
 export function initSessions(transport: Transport): void {
   session.setTimeoutCallback(async (s: GameSession) => {
-    await transport.send(s.user1, 'Session timed out after 1 hour.');
-    await transport.send(s.user2, 'Session timed out after 1 hour.');
     logSession(s);
     session.endSession(s);
   });
