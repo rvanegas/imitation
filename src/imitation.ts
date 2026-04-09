@@ -130,13 +130,14 @@ export async function generatePrediction(
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6';
   const response = await client.messages.create({
     model,
-    max_tokens: 1024,
+    max_tokens: 8000,
+    thinking: { type: 'enabled', budget_tokens: 7000 },
     system: systemPrompt,
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const block = response.content[0];
-  if (block.type !== 'text') throw new Error('Unexpected response type from Claude');
+  const block = response.content.find(b => b.type === 'text');
+  if (!block || block.type !== 'text') throw new Error('Unexpected response type from Claude');
   return { text: block.text.trim(), systemPrompt };
 }
 
