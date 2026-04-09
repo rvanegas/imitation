@@ -78,6 +78,6 @@ export async function deliverReveal(transport: Transport, session: GameSession):
   const reveal = session.imitationFirst
     ? 'A was always the AI. B was always human.'
     : 'A was always human. B was always the AI.';
-  await transport.send(session.user1, reveal);
-  await transport.send(session.user2, reveal);
+  const players = [session.user1, session.user2].filter((id): id is UserId => id !== null);
+  await Promise.all(players.map(id => transport.send(id, reveal)));
 }

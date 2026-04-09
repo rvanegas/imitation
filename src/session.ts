@@ -64,8 +64,8 @@ export function loadPersistedSessions(): void {
     const s: GameSession = { ...persisted, timeoutHandle: null as any };
     scheduleTimeout(s);
     sessions.set(id, s);
-    userToSession.set(s.user1, id);
-    userToSession.set(s.user2, id);
+    if (s.user1 != null) userToSession.set(s.user1, id);
+    if (s.user2 != null) userToSession.set(s.user2, id);
     for (const spectatorId of s.spectators ?? []) {
       spectatorToSession.set(spectatorId, id);
     }
@@ -149,7 +149,7 @@ export function getSessionForSpectator(userId: UserId): GameSession | undefined 
   return sessions.get(sessionId);
 }
 
-export function getPartner(session: GameSession, userId: UserId): UserId {
+export function getPartner(session: GameSession, userId: UserId): UserId | null {
   return userId === session.user1 ? session.user2 : session.user1;
 }
 
@@ -163,6 +163,7 @@ export function touchSession(s: GameSession): void {
 }
 
 export function reshuffle(session: GameSession): void {
+  if (session.user1 === null || session.user2 === null) return;
   session.imitationFirst = Math.random() < 0.5;
   if (session.variation === 'original') {
     session.interrogator = session.interrogator === session.user1 ? session.user2 : session.user1;
@@ -181,12 +182,12 @@ export function restartWithPlayers(
   newUser1: UserId,
   newUser2: UserId,
 ): void {
-  userToSession.delete(s.user1);
-  userToSession.delete(s.user2);
+  if (s.user1 != null) userToSession.delete(s.user1);
+  if (s.user2 != null) userToSession.delete(s.user2);
   userToSession.set(newUser1, s.id);
   userToSession.set(newUser2, s.id);
 
-  const allPrev = [s.user1, s.user2, ...s.spectators];
+  const allPrev = [s.user1, s.user2, ...s.spectators].filter((id): id is UserId => id !== null);
   const newSpectators = allPrev.filter(id => id !== newUser1 && id !== newUser2);
   for (const id of s.spectators) spectatorToSession.delete(id);
   for (const id of newSpectators) spectatorToSession.set(id, s.id);
@@ -214,10 +215,17 @@ export function restartWithPlayers(
   persistSessions();
 }
 
+export function removePlayer(s: GameSession, userId: UserId): void {
+  userToSession.delete(userId);
+  if (s.user1 === userId) s.user1 = null;
+  else if (s.user2 === userId) s.user2 = null;
+  persistSessions();
+}
+
 export function endSession(session: GameSession): void {
   clearTimeout(session.timeoutHandle);
-  userToSession.delete(session.user1);
-  userToSession.delete(session.user2);
+  if (session.user1 != null) userToSession.delete(session.user1);
+  if (session.user2 != null) userToSession.delete(session.user2);
   for (const id of session.spectators) spectatorToSession.delete(id);
   sessions.delete(session.id);
   persistSessions();

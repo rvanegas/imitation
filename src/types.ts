@@ -11,8 +11,8 @@ export interface TranscriptEntry {
 
 export interface GameSession {
   id: string;
-  user1: UserId;
-  user2: UserId;
+  user1: UserId | null;
+  user2: UserId | null;
   status: 'active';
   variation: 'symmetric' | 'original';
   imitationFirst: boolean;

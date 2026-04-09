@@ -12,6 +12,10 @@ import {
 } from './delivery';
 import { logSession, updateLog } from './log';
 
+function hasPlayers(s: GameSession): s is GameSession & { user1: UserId; user2: UserId } {
+  return s.user1 !== null && s.user2 !== null;
+}
+
 function stripEmoji(text: string): string {
   return text.replace(/\p{Extended_Pictographic}/gu, '').replace(/\s{2,}/g, ' ').trim();
 }
@@ -35,7 +39,7 @@ export const HELP_TEXT =
   '/invite — Get the session invite; first to join becomes player 2, others watch\n' +
   '/status — Show current turn, score, and spectator count\n' +
   '/stop — End the current game and show final scores\n' +
-  '/leave — Leave the current session (spectators leave silently; players end the game)\n' +
+  '/leave — Leave the current session\n' +
   '/restart <user1> <user2> — Restart the game with two players from the session\n' +
   '/setname <name> — Set your display name\n' +
   '/help — Show this message';
@@ -67,22 +71,26 @@ export async function handleJoin(
 
   const existing = session.getSessionForUser(userId);
   if (existing) {
-    const partnerId = session.getPartner(existing, userId);
-    session.endSession(existing);
-    await transport.send(partnerId, 'Your partner left to join another game. Use /start to begin a new game.');
+    const partner = session.getPartner(existing, userId);
+    const name = getName(userId) ?? 'A player';
+    const others = [partner, ...existing.spectators].filter((id): id is UserId => id !== null);
+    session.removePlayer(existing, userId);
+    await Promise.all(others.map(id =>
+      transport.send(id, `${name} left to join another game.`)
+    ));
   }
 
   const joined = session.acceptInvite(token, userId);
   if (joined) {
     getOrAssignName(userId);
     if (joined.variation === 'original') {
-      await transport.send(joined.user2, HELP_TEXT);
-      await transport.send(joined.user1, 'Game started! You are the interrogator — ask your first question.');
-      await transport.send(joined.user2, 'Game started! Your partner is the interrogator. Wait for their first question.');
+      await transport.send(joined.user2!, HELP_TEXT);
+      await transport.send(joined.user1!, 'Game started! You are the interrogator — ask your first question.');
+      await transport.send(joined.user2!, 'Game started! Your partner is the interrogator. Wait for their first question.');
     } else {
-      await transport.send(joined.user2, HELP_TEXT);
-      await transport.send(joined.user1, 'Game started! You send the first message.');
-      await transport.send(joined.user2, 'Game started! Your partner sends the first message.');
+      await transport.send(joined.user2!, HELP_TEXT);
+      await transport.send(joined.user1!, 'Game started! You send the first message.');
+      await transport.send(joined.user2!, 'Game started! Your partner sends the first message.');
     }
     return;
   }
@@ -94,7 +102,7 @@ export async function handleJoin(
     await transport.send(userId, HELP_TEXT);
     await transport.send(userId, 'You are now watching this game as a spectator.');
     const notice = `A spectator joined. Spectators watching: ${spectatorCount}`;
-    await Promise.all([watched.user1, watched.user2].map(id => transport.send(id, notice)));
+    await Promise.all([watched.user1, watched.user2].filter((id): id is UserId => id !== null).map(id => transport.send(id, notice)));
     return;
   }
 
@@ -140,6 +148,20 @@ export async function handleStatus(userId: UserId, transport: Transport): Promis
     return;
   }
   const isSpectator = s.spectators.includes(userId);
+  const spectatorNames = s.spectators.map((id, i) => getName(id) ?? `spectator${i + 1}`);
+  const spectatorLine = s.spectators.length === 0
+    ? 'Spectators: none'
+    : `Spectators: ${spectatorNames.join(', ')}`;
+
+  if (s.user1 === null || s.user2 === null) {
+    const presentPlayers = [s.user1, s.user2].filter((id): id is UserId => id !== null);
+    const presentNames = presentPlayers.map(id => getName(id) ?? String(id));
+    await transport.send(userId,
+      `Session waiting for players.\nPresent: ${presentNames.join(', ')}\n${spectatorLine}\nUse /restart to begin a new game with available participants.`
+    );
+    return;
+  }
+
   const name1 = getName(s.user1) ?? 'user1';
   const name2 = getName(s.user2) ?? 'user2';
 
@@ -192,10 +214,6 @@ export async function handleStatus(userId: UserId, transport: Transport): Promis
     scoreLine = `Score — You: ${s.scores[myRole]} | Partner: ${s.scores[partnerRole]}`;
   }
 
-  const spectatorNames = s.spectators.map((id, i) => getName(id) ?? `spectator${i + 1}`);
-  const spectatorLine = s.spectators.length === 0
-    ? 'Spectators: none'
-    : `Spectators: ${spectatorNames.join(', ')}`;
   const playersLine = `Players: ${name1}, ${name2}`;
 
   await transport.send(userId, `${playersLine}\n${interrogatorLine}\n${turnLine}\n${scoreLine}\n${spectatorLine}`);
@@ -223,7 +241,7 @@ export async function handleRestart(
   if (!id2) { await transport.send(userId, `Unknown user: ${name2}`); return; }
   if (id1 === id2) { await transport.send(userId, 'The two players must be different users.'); return; }
 
-  const allParticipants = [s.user1, s.user2, ...s.spectators];
+  const allParticipants = [s.user1, s.user2, ...s.spectators].filter((id): id is UserId => id !== null);
   if (!allParticipants.includes(id1)) { await transport.send(userId, `${name1} is not in this session.`); return; }
   if (!allParticipants.includes(id2)) { await transport.send(userId, `${name2} is not in this session.`); return; }
 
@@ -236,8 +254,8 @@ export async function handleRestart(
     ? 'Game restarted! Your partner is the interrogator. Wait for their first question.'
     : 'Game restarted! Your partner sends the first message.';
 
-  await transport.send(s.user1, msg1);
-  await transport.send(s.user2, msg2);
+  await transport.send(s.user1!, msg1);
+  await transport.send(s.user2!, msg2);
   await Promise.all(s.spectators.map(id => transport.send(id, 'Game restarted with new players.')));
 }
 
@@ -249,7 +267,7 @@ async function endAndNotify(s: GameSession, transport: Transport): Promise<void>
   } else {
     results = `Game over.\nUser 1: ${s.scores.user1} | User 2: ${s.scores.user2}`;
   }
-  const recipients = [s.user1, s.user2, ...s.spectators];
+  const recipients = [s.user1, s.user2, ...s.spectators].filter((id): id is UserId => id !== null);
   await Promise.all(recipients.map(id => transport.send(id, results)));
   logSession(s);
   session.endSession(s);
@@ -272,7 +290,7 @@ export async function handleLeave(userId: UserId, transport: Transport): Promise
     await transport.send(userId, 'You have left the session.');
     const name = getName(userId) ?? 'A spectator';
     const spectatorCount = s.spectators.length;
-    await Promise.all([s.user1, s.user2].map(id =>
+    await Promise.all([s.user1, s.user2].filter((id): id is UserId => id !== null).map(id =>
       transport.send(id, `${name} left. Spectators watching: ${spectatorCount}`)
     ));
     return;
@@ -283,13 +301,25 @@ export async function handleLeave(userId: UserId, transport: Transport): Promise
     await transport.send(userId, 'No active session.');
     return;
   }
-  await endAndNotify(ps, transport);
+
+  const name = getName(userId) ?? 'A player';
+  const partner = session.getPartner(ps, userId);
+  const others = [partner, ...ps.spectators].filter((id): id is UserId => id !== null);
+  session.removePlayer(ps, userId);
+  await transport.send(userId, 'You have left the session.');
+  await Promise.all(others.map(id =>
+    transport.send(id, `${name} left the session.`)
+  ));
 }
 
 export async function handleHuman(userId: UserId, guess: string, transport: Transport): Promise<void> {
   const s = session.getSessionForUser(userId);
   if (!s) {
     await transport.send(userId, 'No active session.');
+    return;
+  }
+  if (!hasPlayers(s)) {
+    await transport.send(userId, 'The other player has left. Use /restart to begin a new game with available participants.');
     return;
   }
 
@@ -314,7 +344,7 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
   const correct = (g === 'A') === humanIsA;
 
   const role = userId === s.user1 ? 'user1' : 'user2';
-  const partnerId = session.getPartner(s, userId);
+  const partnerId = session.getPartner(s, userId)!;
   const partnerRole = partnerId === s.user1 ? 'user1' : 'user2';
 
   const reveal = s.imitationFirst
@@ -401,6 +431,10 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
     await transport.send(userId, 'Use /start to create an invite.');
     return;
   }
+  if (!hasPlayers(s)) {
+    await transport.send(userId, 'The other player has left. Use /restart to begin a new game with available participants.');
+    return;
+  }
 
   if (/^human[/\s]*[ab]\b/i.test(text.trim())) {
     await transport.send(userId, 'Looks like you meant to guess. Use /human A or /human B.');
@@ -411,7 +445,7 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
   if (!stripped) return;
 
   if (s.variation === 'original') {
-    const witnessId = session.getPartner(s, s.interrogator);
+    const witnessId = session.getPartner(s, s.interrogator)!;
 
     if (s.pendingResponder === witnessId) {
       if (userId !== witnessId) {
@@ -494,7 +528,7 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
   session.touchSession(s);
 
   const senderRole = userId === s.user1 ? 'user1' : 'user2';
-  const partnerId = session.getPartner(s, userId);
+  const partnerId = session.getPartner(s, userId)!;
   const senderProfile = getProfile(userId, partnerId);
   const partnerProfile = getProfile(partnerId, userId);
 
