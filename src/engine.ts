@@ -318,6 +318,7 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
     await transport.send(userId, 'No active session.');
     return;
   }
+  session.touchSession(s);
   if (!hasPlayers(s)) {
     await transport.send(userId, 'The other player has left. Use /restart to begin a new game with available participants.');
     return;
@@ -375,7 +376,6 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
     }
 
     await deliverRoundResultToSpectators(transport, s, guesserLabel, correct, reveal, s.scores, s.teamScores);
-    session.touchSession(s);
     session.reshuffle(s);
 
     const youAreNewInterrogator = s.interrogator === userId;
@@ -410,7 +410,6 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
     }
 
     await deliverRoundResultToSpectators(transport, s, guesserLabel, correct, reveal, s.scores);
-    session.touchSession(s);
     session.reshuffle(s);
 
     const youGoFirst = s.firstSender === userId;
@@ -431,6 +430,7 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
     await transport.send(userId, 'Use /start to create an invite.');
     return;
   }
+  session.touchSession(s);
   if (!hasPlayers(s)) {
     await transport.send(userId, 'The other player has left. Use /restart to begin a new game with available participants.');
     return;
@@ -452,8 +452,6 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
         await transport.send(userId, 'Waiting for your partner to respond.');
         return;
       }
-      session.touchSession(s);
-
       const prediction = stripEmoji(s.pendingPrediction!);
       const witnessRole = witnessId === s.user1 ? 'user1' : 'user2';
 
@@ -478,8 +476,6 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
       await transport.send(userId, 'Waiting for your partner to ask a question.');
       return;
     }
-    session.touchSession(s);
-
     const witnessRole = witnessId === s.user1 ? 'user1' : 'user2';
     const witnessProfile = getProfile(witnessId, s.interrogator);
     const interrogatorProfile = getProfile(s.interrogator, witnessId);
@@ -524,8 +520,6 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
     await transport.send(userId, 'Waiting for your partner to respond.');
     return;
   }
-
-  session.touchSession(s);
 
   const senderRole = userId === s.user1 ? 'user1' : 'user2';
   const partnerId = session.getPartner(s, userId)!;
