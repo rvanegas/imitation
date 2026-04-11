@@ -1,7 +1,7 @@
 import * as fs from 'fs';
-import * as path from 'path';
 import { GameSession, SenderRole, UserId } from './types';
 import { diagSessionCreated, diagSessionEnded, diagSessionsLoaded, diagUserMapped, diagUserUnmapped } from './diag';
+import { SESSIONS_FILE } from './config';
 
 const pendingSessions = new Map<string, { userId: UserId; variation: 'symmetric' | 'original' }>();
 const sessions = new Map<string, GameSession>();
@@ -9,7 +9,6 @@ const userToSession = new Map<UserId, string>();
 const spectatorToSession = new Map<UserId, string>();
 
 const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
-const SESSIONS_FILE = path.join(process.cwd(), 'sessions.json');
 
 let timeoutCallback: ((s: GameSession) => Promise<void>) | null = null;
 

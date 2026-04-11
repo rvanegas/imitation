@@ -1,7 +1,6 @@
 import * as net from 'net';
 import * as readline from 'readline';
-
-const SOCKET_PATH = process.env.SOCKET_PATH ?? '/tmp/imitation.sock';
+import { SOCKET_PATH } from './config';
 
 export function start(name: string): void {
   const socket = net.connect(SOCKET_PATH, () => {

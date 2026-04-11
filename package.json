@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
-    "dotenv": "^16.4.5",
+    "@iarna/toml": "^2.2.5",
     "openai": "^6.34.0",
     "telegraf": "^4.16.3"
   },

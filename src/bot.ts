@@ -4,6 +4,7 @@ import { Transport } from './transport';
 import { UserId } from './types';
 import * as engine from './engine';
 import { getOrCreateUserIdForTelegram } from './userProfiles';
+import { BOT_TOKEN } from './config';
 
 function uid(ctx: { from: { id: number } }): UserId {
   return getOrCreateUserIdForTelegram(ctx.from.id);
@@ -13,8 +14,7 @@ export function setupTelegram(
   transport: Transport,
   onUsername: (name: string) => void,
 ): Telegraf {
-  const { BOT_TOKEN } = process.env;
-  if (!BOT_TOKEN) throw new Error('BOT_TOKEN is required in .env');
+  if (!BOT_TOKEN) throw new Error('bot_token is required in config.toml');
 
   const bot = new Telegraf(BOT_TOKEN, { handlerTimeout: 5 * 60 * 1000 }); // 5 minutes for slow local models
 

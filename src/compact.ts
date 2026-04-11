@@ -1,10 +1,8 @@
-import * as dotenv from 'dotenv';
-dotenv.config();
-
 import Anthropic from '@anthropic-ai/sdk';
+import { ANTHROPIC_API_KEY, ANTHROPIC_MODEL } from './config';
 import { getAllAssessments, setAssessments } from './userProfiles';
 
-const client = new Anthropic();
+const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
 async function main() {
   const assessments = getAllAssessments();
@@ -21,9 +19,8 @@ async function main() {
     assessments.map((a, i) => `${i + 1}. ${a}`).join('\n') +
     `\n\nReturn only a JSON array of strings, each a concise lesson.`;
 
-  const model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6';
   const response = await client.messages.create({
-    model,
+    model: ANTHROPIC_MODEL,
     max_tokens: 1024,
     messages: [{ role: 'user', content: prompt }],
   });

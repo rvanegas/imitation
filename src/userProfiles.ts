@@ -1,8 +1,6 @@
 import * as fs from 'fs';
-import * as path from 'path';
 import { UserId, UserProfile, UserProfileStore } from './types';
-
-const PROFILES_PATH = path.resolve(__dirname, '../user_profiles.json');
+import { PROFILES_FILE as PROFILES_PATH } from './config';
 const MAX_BYTES_PER_USER = 1 * 1024 * 1024; // 1 MB
 
 function loadStore(): UserProfileStore {

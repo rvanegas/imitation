@@ -1,19 +1,20 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { TranscriptEntry, UserId } from './types';
+import { ANTHROPIC_API_KEY, ANTHROPIC_MODEL, OLLAMA_BASE_URL, OLLAMA_MODEL, MODEL_PROVIDER } from './config';
 
-const client = new Anthropic();
+const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
 function getOllamaClient(): OpenAI {
   return new OpenAI({
-    baseURL: process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434/v1',
+    baseURL: OLLAMA_BASE_URL,
     apiKey: 'ollama', // required by SDK, ignored by Ollama
     timeout: 5 * 60 * 1000, // 5 minutes — large models can be slow on first load
   });
 }
 
 function useOllama(): boolean {
-  return (process.env.MODEL_PROVIDER ?? 'anthropic') === 'ollama';
+  return MODEL_PROVIDER === 'ollama';
 }
 
 function stripOllamaReasoning(text: string): string {
@@ -153,10 +154,9 @@ export async function generatePrediction(
   const systemPrompt = buildSystemPrompt(players, senderRole, isOpener, selfFollow, assessments);
 
   if (useOllama()) {
-    const model = process.env.OLLAMA_MODEL ?? 'llama3.2';
     const ollama = getOllamaClient();
     const response = await ollama.chat.completions.create({
-      model,
+      model: OLLAMA_MODEL,
       max_tokens: 1024,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -168,9 +168,8 @@ export async function generatePrediction(
     return { text: stripOllamaReasoning(raw), systemPrompt };
   }
 
-  const model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6';
   const response = await client.messages.create({
-    model,
+    model: ANTHROPIC_MODEL,
     max_tokens: 8000,
     thinking: { type: 'enabled', budget_tokens: 1024 },
     system: systemPrompt,
@@ -226,10 +225,9 @@ export async function generateAssessment(
     `Write in abstract terms applicable to future imitations of this witness — do not reference the specific messages or conversation, since the assessment will be read later without that context.`;
 
   if (useOllama()) {
-    const model = process.env.OLLAMA_MODEL ?? 'llama3.2';
     const ollama = getOllamaClient();
     const response = await ollama.chat.completions.create({
-      model,
+      model: OLLAMA_MODEL,
       max_tokens: 256,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -241,9 +239,8 @@ export async function generateAssessment(
     return stripOllamaReasoning(raw);
   }
 
-  const model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6';
   const response = await client.messages.create({
-    model,
+    model: ANTHROPIC_MODEL,
     max_tokens: 256,
     system: systemPrompt,
     messages: [{ role: 'user', content: prompt }],

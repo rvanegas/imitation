@@ -1,12 +1,10 @@
 import { Telegraf } from 'telegraf';
-import * as dotenv from 'dotenv';
+import { BOT_TOKEN } from './config';
 
-dotenv.config();
+const CHANNEL_ID = process.env.CHANNEL_ID;
 
-const { BOT_TOKEN, CHANNEL_ID } = process.env;
-
-if (!BOT_TOKEN) throw new Error('BOT_TOKEN is required in .env');
-if (!CHANNEL_ID) throw new Error('CHANNEL_ID is required in .env');
+if (!BOT_TOKEN) throw new Error('bot_token is required in config.toml');
+if (!CHANNEL_ID) throw new Error('CHANNEL_ID env var is required');
 
 const bot = new Telegraf(BOT_TOKEN);
 

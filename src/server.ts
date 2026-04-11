@@ -4,8 +4,7 @@ import { Transport } from './transport';
 import { UserId } from './types';
 import * as engine from './engine';
 import { getName, getOrCreateUserIdByName, getTelegramId } from './userProfiles';
-
-const SOCKET_PATH = process.env.SOCKET_PATH ?? '/tmp/imitation.sock';
+import { SOCKET_PATH } from './config';
 
 class CombinedTransport implements Transport {
   private sockets = new Map<UserId, net.Socket>();

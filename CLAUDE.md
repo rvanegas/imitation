@@ -15,15 +15,21 @@ npm run start                   # Run compiled output from dist/
 
 No test suite exists. There is no linter configured beyond TypeScript strict mode.
 
-## Environment
+## Configuration
 
-Requires a `.env` file (see `.env.example`):
-- `BOT_TOKEN` — Telegram bot token (optional if running with `--no-telegram`)
-- `ANTHROPIC_API_KEY` — Anthropic API key
-- `SOCKET_PATH` — Unix socket path (default: `/tmp/imitation.sock`)
+Requires `~/.config/imitation/config.toml` (see `config.toml.example`):
+- `bot_token` — Telegram bot token (optional if running with `--no-telegram`)
+- `model_provider` — `"anthropic"` (default) or `"ollama"`
+- `[anthropic] api_key` — Anthropic API key
+- `[anthropic] model` — model ID (default: `claude-sonnet-4-6`)
+- `[ollama] model` / `[ollama] base_url` — Ollama settings
+- `[socket] path` — override the Unix socket path
 
-`user_profiles.json` is generated at runtime and persists user message history across restarts.
-`sessions.json` is generated at runtime and persists active sessions across restarts.
+XDG directories are respected (`XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_RUNTIME_DIR`).
+
+`~/.local/state/imitation/user_profiles.json` — persists user message history across restarts.
+`~/.local/state/imitation/sessions.json` — persists active sessions across restarts.
+Unix socket defaults to `$XDG_RUNTIME_DIR/imitation/imitation.sock`.
 
 ## Architecture
 

@@ -1,0 +1,20 @@
+# Imitation Game configuration
+# Copy to ~/.config/imitation/config.toml and fill in your values.
+
+bot_token = "your_telegram_bot_token_here"
+
+# Provider: "anthropic" (default) or "ollama"
+model_provider = "anthropic"
+
+[anthropic]
+api_key = "your_anthropic_api_key_here"
+model   = "claude-sonnet-4-6"
+# model = "claude-haiku-4-5"
+
+[ollama]
+model    = "llama3.2"
+base_url = "http://localhost:11434/v1"
+
+[socket]
+# Defaults to $XDG_RUNTIME_DIR/imitation/imitation.sock (or /tmp/imitation/imitation.sock)
+# path = "/custom/path/to/imitation.sock"

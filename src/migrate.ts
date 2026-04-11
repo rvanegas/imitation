@@ -7,10 +7,7 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
-
-const PROFILES_PATH = path.resolve(__dirname, '../user_profiles.json');
-const SESSIONS_PATH = path.resolve(__dirname, '../sessions.json');
+import { PROFILES_FILE as PROFILES_PATH, SESSIONS_FILE as SESSIONS_PATH } from './config';
 
 // IDs below this threshold are treated as server-assigned sequential IDs.
 // Telegram user IDs are always well above 1 000 000.
