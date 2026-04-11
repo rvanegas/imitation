@@ -11,6 +11,7 @@ import {
   deliverRoundResultToSpectators,
 } from './delivery';
 import { logSession, updateLog } from './log';
+import { diagNoSession } from './diag';
 
 function hasPlayers(s: GameSession): s is GameSession & { user1: UserId; user2: UserId } {
   return s.user1 !== null && s.user2 !== null;
@@ -427,6 +428,7 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
 export async function handleMessage(userId: UserId, text: string, transport: Transport): Promise<void> {
   const s = session.getSessionForUser(userId);
   if (!s) {
+    diagNoSession(userId, 'handleMessage');
     await transport.send(userId, 'Use /start to create an invite.');
     return;
   }

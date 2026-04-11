@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { GameSession, SenderRole, UserId } from './types';
+import { diagSessionCreated, diagSessionEnded, diagSessionsLoaded, diagUserMapped, diagUserUnmapped } from './diag';
 
 const pendingSessions = new Map<string, { userId: UserId; variation: 'symmetric' | 'original' }>();
 const sessions = new Map<string, GameSession>();
@@ -22,6 +23,7 @@ function scheduleTimeout(s: GameSession): void {
   s.timeoutHandle = setTimeout(async () => {
     const idle = Date.now() - (s.lastActivity ?? 0);
     if (idle >= SESSION_TIMEOUT_MS) {
+      diagSessionEnded(s.id, 'timeout');
       await timeoutCallback!(s);
     } else {
       scheduleTimeout(s);
@@ -58,18 +60,21 @@ export function loadPersistedSessions(): void {
     pendingSessions.set(token, entry);
   }
 
+  let loadedCount = 0;
   for (const [id, persisted] of Object.entries<any>(data.sessions ?? {})) {
     const elapsed = Date.now() - (persisted.lastActivity ?? 0);
     if (elapsed >= SESSION_TIMEOUT_MS) continue;
+    loadedCount++;
     const s: GameSession = { ...persisted, timeoutHandle: null as any };
     scheduleTimeout(s);
     sessions.set(id, s);
-    if (s.user1 != null) userToSession.set(s.user1, id);
-    if (s.user2 != null) userToSession.set(s.user2, id);
+    if (s.user1 != null) { userToSession.set(s.user1, id); diagUserMapped(s.user1, id); }
+    if (s.user2 != null) { userToSession.set(s.user2, id); diagUserMapped(s.user2, id); }
     for (const spectatorId of s.spectators ?? []) {
       spectatorToSession.set(spectatorId, id);
     }
   }
+  diagSessionsLoaded(loadedCount);
 }
 
 export function createInvite(userId: UserId, variation: 'symmetric' | 'original'): string {
@@ -120,6 +125,9 @@ export function acceptInvite(token: string, userId: UserId): GameSession | null 
   sessions.set(s.id, s);
   userToSession.set(initiator, s.id);
   userToSession.set(userId, s.id);
+  diagSessionCreated(s.id, initiator, userId);
+  diagUserMapped(initiator, s.id);
+  diagUserMapped(userId, s.id);
 
   persistSessions();
   return s;
@@ -216,6 +224,7 @@ export function restartWithPlayers(
 }
 
 export function removePlayer(s: GameSession, userId: UserId): void {
+  diagUserUnmapped(userId, s.id);
   userToSession.delete(userId);
   if (s.user1 === userId) s.user1 = null;
   else if (s.user2 === userId) s.user2 = null;
@@ -224,8 +233,9 @@ export function removePlayer(s: GameSession, userId: UserId): void {
 
 export function endSession(session: GameSession): void {
   clearTimeout(session.timeoutHandle);
-  if (session.user1 != null) userToSession.delete(session.user1);
-  if (session.user2 != null) userToSession.delete(session.user2);
+  diagSessionEnded(session.id, 'explicit');
+  if (session.user1 != null) { userToSession.delete(session.user1); diagUserUnmapped(session.user1, session.id); }
+  if (session.user2 != null) { userToSession.delete(session.user2); diagUserUnmapped(session.user2, session.id); }
   for (const id of session.spectators) spectatorToSession.delete(id);
   sessions.delete(session.id);
   persistSessions();
