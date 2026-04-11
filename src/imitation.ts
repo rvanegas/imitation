@@ -76,8 +76,8 @@ export function buildCachedBlock(
     `The following are real messages each player has sent in previous sessions. Use them to understand their communication styles. ` +
     `For the player you are imitating, match their style exactly — pay close attention to message length, vocabulary, punctuation, use of slang, sentence structure, and any spelling or grammatical errors they make. ` +
     `Reproduce errors at a similar rate and of a similar type. Do not silently correct their writing.\n\n` +
-    `Do NOT reproduce any message verbatim, unless it is a very short, context-free phrase (e.g. "hi", "yes", "ok") where repetition is natural. ` +
-    `For anything longer or more specific, treat it as a writing sample only — never copy or closely paraphrase it, since each was written in response to a context you do not have.`
+    `Your task is to compose an original message. The samples tell you how this person writes — their rhythm, vocabulary, and habits — but the message itself must be new, as if this person were writing in this moment for the first time. ` +
+    `Before writing your response, scan the examples above. If your intended message reads as though it had been plagiarized from the samples, choose a different phrasing.`
   );
   for (const p of [players.user1, players.user2]) {
     if (p.messages.length > 0) {
@@ -311,7 +311,7 @@ export async function generateAssessment(
     const ollama = getOllamaClient();
     const response = await ollama.chat.completions.create({
       model: OLLAMA_MODEL,
-      max_tokens: 256,
+      max_tokens: 1024,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: prompt },
@@ -327,7 +327,7 @@ export async function generateAssessment(
 
   const response = await client.messages.create({
     model: ANTHROPIC_MODEL,
-    max_tokens: 256,
+    max_tokens: 1024,
     system: toApiBlocks(allBlocks),
     messages: [{ role: 'user', content: prompt }],
   });

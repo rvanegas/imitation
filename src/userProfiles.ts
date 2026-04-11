@@ -50,10 +50,16 @@ function migrateFlat(old: Record<string, any>): Store {
 function loadStore(): Store {
   try {
     const raw = JSON.parse(fs.readFileSync(PROFILES_PATH, 'utf8'));
-    if (raw.users !== undefined) return raw as Store;
-    const migrated = migrateFlat(raw);
-    saveStore(migrated);
-    return migrated;
+    if (raw.users === undefined) {
+      const migrated = migrateFlat(raw);
+      saveStore(migrated);
+      return migrated;
+    }
+    const store = raw as Store;
+    const before = store.assessments.list.length;
+    store.assessments.list = store.assessments.list.filter(r => r.guesserId != null && r.imitateeId != null);
+    if (store.assessments.list.length !== before) saveStore(store);
+    return store;
   } catch { return { ...EMPTY_STORE, users: {}, pairs: {}, assessments: { list: [] } }; }
 }
 
