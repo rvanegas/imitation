@@ -17,8 +17,9 @@ for (const dir of [CONFIG_DIR, STATE_DIR, RUNTIME_DIR]) {
 }
 
 // Persistent state file paths
-export const SESSIONS_FILE = path.join(STATE_DIR, 'sessions.json');
-export const PROFILES_FILE = path.join(STATE_DIR, 'user_profiles.json');
+export const SESSIONS_FILE   = path.join(STATE_DIR, 'sessions.json');
+export const PROFILES_FILE   = path.join(STATE_DIR, 'user_profiles.json');
+export const WS_INVITES_FILE = path.join(STATE_DIR, 'ws-invites.json');
 
 interface PricingEntry {
   input_per_million?: number;
@@ -34,6 +35,7 @@ interface Config {
   anthropic?: { api_key?: string; model?: string };
   ollama?:    { model?: string; base_url?: string };
   socket?:    { path?: string };
+  websocket?: { port?: number };
   pricing?:   Record<string, PricingEntry>;
 }
 
@@ -54,6 +56,7 @@ export const ANTHROPIC_MODEL = raw.anthropic?.model     ?? 'claude-sonnet-4-6';
 export const OLLAMA_MODEL    = raw.ollama?.model        ?? 'llama3.2';
 export const OLLAMA_BASE_URL = raw.ollama?.base_url     ?? 'http://localhost:11434/v1';
 export const SOCKET_PATH     = raw.socket?.path         || path.join(RUNTIME_DIR, 'imitation.sock');
+export const WS_PORT         = raw.websocket?.port      ?? 8080;
 
 // Per-model pricing table. Keys are model IDs as recorded in cost-audit.jsonl.
 export const PRICING: Record<string, { inputPerMillion: number; outputPerMillion: number; cacheWritePerMillion: number; cacheReadPerMillion: number }> = {};

@@ -30,7 +30,7 @@ function scheduleTimeout(s: GameSession): void {
   }, remaining);
 }
 
-function generateToken(): string {
+function generateSessionToken(): string {
   return Math.random().toString(36).slice(2, 8);
 }
 
@@ -77,10 +77,10 @@ export function loadPersistedSessions(): void {
 }
 
 export function createInvite(userId: UserId, variation: 'symmetric' | 'original'): string {
-  const token = generateToken();
-  pendingSessions.set(token, { userId, variation });
+  const sessionToken = generateSessionToken();
+  pendingSessions.set(sessionToken, { userId, variation });
   persistSessions();
-  return token;
+  return sessionToken;
 }
 
 export function isOwnInvite(token: string, userId: UserId): boolean {

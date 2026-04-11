@@ -92,8 +92,8 @@ export async function handleVariationSelect(
   transport: Transport,
 ): Promise<void> {
   getOrAssignName(userId);
-  const token = session.createInvite(userId, variation);
-  const link = transport.makeInviteLink(token);
+  const sessionToken = session.createInvite(userId, variation);
+  const link = transport.makeInviteLink(sessionToken);
   const label = variation === 'original' ? 'Original Turing Test' : 'Symmetric';
   await transport.send(
     userId,
@@ -103,10 +103,10 @@ export async function handleVariationSelect(
 
 export async function handleJoin(
   userId: UserId,
-  token: string,
+  sessionToken: string,
   transport: Transport,
 ): Promise<void> {
-  if (session.isOwnInvite(token, userId)) {
+  if (session.isOwnInvite(sessionToken, userId)) {
     await transport.send(userId, 'This is your own invite — share it with someone else to start a game.');
     return;
   }
@@ -122,7 +122,7 @@ export async function handleJoin(
     ));
   }
 
-  const joined = session.acceptInvite(token, userId);
+  const joined = session.acceptInvite(sessionToken, userId);
   if (joined) {
     getOrAssignName(userId);
     touchUserSession(userId);
@@ -141,7 +141,7 @@ export async function handleJoin(
     return;
   }
 
-  const watched = session.addSpectator(token, userId);
+  const watched = session.addSpectator(sessionToken, userId);
   if (watched) {
     getOrAssignName(userId);
     touchUserSession(userId);

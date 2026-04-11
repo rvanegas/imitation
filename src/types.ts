@@ -54,5 +54,6 @@ export interface UserProfile {
   messages: string[];
   name?: string;
   telegramId?: number;
+  wsToken?: string;      // persistent auth token for WebSocket clients
   lastSession?: string;  // ISO timestamp of most recent presence in a game session
 }

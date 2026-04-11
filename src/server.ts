@@ -4,12 +4,18 @@ import { Transport } from './transport';
 import { UserId } from './types';
 import * as engine from './engine';
 import { getName, getOrCreateUserIdByName, getTelegramId } from './userProfiles';
-import { SOCKET_PATH } from './config';
+import { SOCKET_PATH, WS_PORT } from './config';
+import { WebSocketTransport, startWebSocketServer } from './websocket';
 
 class CombinedTransport implements Transport {
   private sockets = new Map<UserId, net.Socket>();
+  private wsTransport: WebSocketTransport;
   private telegramSend: ((userId: UserId, text: string) => Promise<void>) | null = null;
   private botUsername = '';
+
+  constructor(wsTransport: WebSocketTransport) {
+    this.wsTransport = wsTransport;
+  }
 
   setTelegramSend(fn: (userId: UserId, text: string) => Promise<void>): void {
     this.telegramSend = fn;
@@ -28,6 +34,10 @@ class CombinedTransport implements Transport {
   }
 
   async send(userId: UserId, text: string): Promise<void> {
+    if (this.wsTransport.has(userId)) {
+      await this.wsTransport.send(userId, text);
+      return;
+    }
     const socket = this.sockets.get(userId);
     if (socket?.writable) {
       socket.write(JSON.stringify({ type: 'msg', text }) + '\n');
@@ -45,7 +55,8 @@ class CombinedTransport implements Transport {
 }
 
 export function start(telegram: boolean): void {
-  const transport = new CombinedTransport();
+  const wsTransport = new WebSocketTransport();
+  const transport = new CombinedTransport(wsTransport);
   engine.initSessions(transport);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -156,6 +167,8 @@ export function start(telegram: boolean): void {
     console.log(`Imitation server listening on ${SOCKET_PATH}`);
     console.log('Connect with:  npm run dev terminal <name>');
   });
+
+  startWebSocketServer(WS_PORT, wsTransport, dispatch);
 
   function shutdown(): void {
     if (bot) bot.stop('SIGINT');

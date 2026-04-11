@@ -1,6 +1,7 @@
 import * as fs from 'fs';
+import * as crypto from 'crypto';
 import { UserId, UserProfile } from './types';
-import { PROFILES_FILE as PROFILES_PATH } from './config';
+import { PROFILES_FILE as PROFILES_PATH, WS_INVITES_FILE } from './config';
 
 const MAX_BYTES_PER_USER = 1 * 1024 * 1024; // 1 MB
 
@@ -220,6 +221,48 @@ export function setAssessments(list: string[]): void {
     timestamp: new Date().toISOString(),
   }));
   saveStore(store);
+}
+
+// --- WebSocket authentication ---
+
+function loadWsInvites(): string[] {
+  try { return JSON.parse(fs.readFileSync(WS_INVITES_FILE, 'utf8')); } catch { return []; }
+}
+
+function saveWsInvites(tokens: string[]): void {
+  fs.writeFileSync(WS_INVITES_FILE, JSON.stringify(tokens, null, 2));
+}
+
+export function createWsInviteToken(): string {
+  const token = crypto.randomBytes(3).toString('hex'); // 6 hex chars, e.g. "a3f9c1"
+  const tokens = loadWsInvites();
+  tokens.push(token);
+  saveWsInvites(tokens);
+  return token;
+}
+
+export function consumeWsInviteToken(token: string): boolean {
+  const tokens = loadWsInvites();
+  const idx = tokens.indexOf(token);
+  if (idx === -1) return false;
+  tokens.splice(idx, 1);
+  saveWsInvites(tokens);
+  return true;
+}
+
+export function setWsToken(userId: UserId, token: string): void {
+  const store = loadStore();
+  const key = userId.toString();
+  store.users[key] = { ...store.users[key], messages: store.users[key]?.messages ?? [], wsToken: token };
+  saveStore(store);
+}
+
+export function getUserIdByWsToken(token: string): UserId | undefined {
+  const store = loadStore();
+  for (const [key, profile] of Object.entries(store.users)) {
+    if (profile.wsToken === token) return parseInt(key, 10);
+  }
+  return undefined;
 }
 
 export function appendMessage(userId: UserId, partnerId: UserId, message: string): void {
