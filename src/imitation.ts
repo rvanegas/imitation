@@ -1,7 +1,31 @@
 import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { TranscriptEntry, UserId } from './types';
 
 const client = new Anthropic();
+
+function getOllamaClient(): OpenAI {
+  return new OpenAI({
+    baseURL: process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434/v1',
+    apiKey: 'ollama', // required by SDK, ignored by Ollama
+    timeout: 5 * 60 * 1000, // 5 minutes — large models can be slow on first load
+  });
+}
+
+function useOllama(): boolean {
+  return (process.env.MODEL_PROVIDER ?? 'anthropic') === 'ollama';
+}
+
+function stripOllamaReasoning(text: string): string {
+  // Strip <think>...</think> blocks emitted by reasoning models (DeepSeek-R1, QwQ, etc.)
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+}
+
+const OLLAMA_OUTPUT_CONSTRAINT =
+  '\n\nCRITICAL: Your entire response must be the message text itself — nothing else. ' +
+  'Do not explain what you are doing. Do not describe the message. Do not put quotes around it. ' +
+  'Do not write any preamble, analysis, or follow-up. ' +
+  'Begin your response with the first word of the predicted message and end with its last word.';
 
 const BASE_PROMPT = `You are playing the imitation game. You are impersonating a human participant in a conversation. You will be shown the conversation history so far (which may be empty at the start of the game) and asked to predict what the specified user would say next.
 
@@ -127,11 +151,28 @@ export async function generatePrediction(
   const selfFollow = !isOpener && !questionContext && lastRealRole === senderRole;
 
   const systemPrompt = buildSystemPrompt(players, senderRole, isOpener, selfFollow, assessments);
+
+  if (useOllama()) {
+    const model = process.env.OLLAMA_MODEL ?? 'llama3.2';
+    const ollama = getOllamaClient();
+    const response = await ollama.chat.completions.create({
+      model,
+      max_tokens: 1024,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: prompt + OLLAMA_OUTPUT_CONSTRAINT },
+      ],
+    });
+    const raw = response.choices[0]?.message?.content;
+    if (!raw) throw new Error('Unexpected response from Ollama');
+    return { text: stripOllamaReasoning(raw), systemPrompt };
+  }
+
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6';
   const response = await client.messages.create({
     model,
     max_tokens: 8000,
-    thinking: { type: 'enabled', budget_tokens: 7000 },
+    thinking: { type: 'enabled', budget_tokens: 1024 },
     system: systemPrompt,
     messages: [{ role: 'user', content: prompt }],
   });
@@ -183,6 +224,22 @@ export async function generateAssessment(
     `In 3-4 sentences, assess what worked or didn't work across all dimensions: surface style (length, tone, vocabulary, punctuation), content (what topics or ideas were introduced, whether they suited this person's register and interests), and conversational pragmatics (whether your turn performed the right speech act, how well your response aligned with what preceded it, and whether your informativeness level matched the register of the exchange). ` +
     `Consider the prior lessons already recorded above — write something that adds new insight or refines existing understanding, not a repetition of what is already known. ` +
     `Write in abstract terms applicable to future imitations of this witness — do not reference the specific messages or conversation, since the assessment will be read later without that context.`;
+
+  if (useOllama()) {
+    const model = process.env.OLLAMA_MODEL ?? 'llama3.2';
+    const ollama = getOllamaClient();
+    const response = await ollama.chat.completions.create({
+      model,
+      max_tokens: 256,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: prompt },
+      ],
+    });
+    const raw = response.choices[0]?.message?.content;
+    if (!raw) throw new Error('Unexpected response from Ollama');
+    return stripOllamaReasoning(raw);
+  }
 
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6';
   const response = await client.messages.create({

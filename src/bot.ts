@@ -16,7 +16,7 @@ export function setupTelegram(
   const { BOT_TOKEN } = process.env;
   if (!BOT_TOKEN) throw new Error('BOT_TOKEN is required in .env');
 
-  const bot = new Telegraf(BOT_TOKEN);
+  const bot = new Telegraf(BOT_TOKEN, { handlerTimeout: 5 * 60 * 1000 }); // 5 minutes for slow local models
 
   bot.telegram.getMe().then(me => onUsername(me.username!)).catch(() => {});
 
