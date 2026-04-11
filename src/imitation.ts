@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { TranscriptEntry, UserId } from './types';
 import { ANTHROPIC_API_KEY, ANTHROPIC_MODEL, OLLAMA_BASE_URL, OLLAMA_MODEL, MODEL_PROVIDER } from './config';
+import { appendCostAudit } from './costAudit';
 
 const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
@@ -117,6 +118,7 @@ export async function generatePrediction(
   players: { user1: PlayerInfo; user2: PlayerInfo },
   questionContext?: string,
   assessments: Array<{ text: string; imitateeId: UserId }> = [],
+  sessionId?: string,
 ): Promise<{ text: string; systemPrompt: string }> {
   let prompt = '';
 
@@ -165,6 +167,9 @@ export async function generatePrediction(
     });
     const raw = response.choices[0]?.message?.content;
     if (!raw) throw new Error('Unexpected response from Ollama');
+    if (response.usage) {
+      appendCostAudit({ timestamp: new Date().toISOString(), operation: 'prediction', sessionId, provider: 'ollama', model: OLLAMA_MODEL, inputTokens: response.usage.prompt_tokens, outputTokens: response.usage.completion_tokens });
+    }
     return { text: stripOllamaReasoning(raw), systemPrompt };
   }
 
@@ -174,6 +179,18 @@ export async function generatePrediction(
     thinking: { type: 'enabled', budget_tokens: 1024 },
     system: systemPrompt,
     messages: [{ role: 'user', content: prompt }],
+  });
+
+  appendCostAudit({
+    timestamp: new Date().toISOString(),
+    operation: 'prediction',
+    sessionId,
+    provider: 'anthropic',
+    model: ANTHROPIC_MODEL,
+    inputTokens: response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
+    cacheCreationTokens: response.usage.cache_creation_input_tokens ?? undefined,
+    cacheReadTokens: response.usage.cache_read_input_tokens ?? undefined,
   });
 
   const block = response.content.find(b => b.type === 'text');
@@ -188,6 +205,7 @@ export async function generateAssessment(
   correct: boolean,
   players: { user1: PlayerInfo; user2: PlayerInfo },
   predictionSystemPrompt: string,
+  sessionId?: string,
 ): Promise<string> {
   const outcome = correct
     ? 'The human correctly identified the AI — the imitation did not fool them.'
@@ -236,6 +254,9 @@ export async function generateAssessment(
     });
     const raw = response.choices[0]?.message?.content;
     if (!raw) throw new Error('Unexpected response from Ollama');
+    if (response.usage) {
+      appendCostAudit({ timestamp: new Date().toISOString(), operation: 'assessment', sessionId, provider: 'ollama', model: OLLAMA_MODEL, inputTokens: response.usage.prompt_tokens, outputTokens: response.usage.completion_tokens });
+    }
     return stripOllamaReasoning(raw);
   }
 
@@ -244,6 +265,18 @@ export async function generateAssessment(
     max_tokens: 256,
     system: systemPrompt,
     messages: [{ role: 'user', content: prompt }],
+  });
+
+  appendCostAudit({
+    timestamp: new Date().toISOString(),
+    operation: 'assessment',
+    sessionId,
+    provider: 'anthropic',
+    model: ANTHROPIC_MODEL,
+    inputTokens: response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
+    cacheCreationTokens: response.usage.cache_creation_input_tokens ?? undefined,
+    cacheReadTokens: response.usage.cache_read_input_tokens ?? undefined,
   });
 
   const block = response.content[0];

@@ -20,6 +20,13 @@ for (const dir of [CONFIG_DIR, STATE_DIR, RUNTIME_DIR]) {
 export const SESSIONS_FILE = path.join(STATE_DIR, 'sessions.json');
 export const PROFILES_FILE = path.join(STATE_DIR, 'user_profiles.json');
 
+interface PricingEntry {
+  input_per_million?: number;
+  output_per_million?: number;
+  cache_write_per_million?: number;
+  cache_read_per_million?: number;
+}
+
 // TOML config schema
 interface Config {
   bot_token?:     string;
@@ -27,6 +34,7 @@ interface Config {
   anthropic?: { api_key?: string; model?: string };
   ollama?:    { model?: string; base_url?: string };
   socket?:    { path?: string };
+  pricing?:   Record<string, PricingEntry>;
 }
 
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.toml');
@@ -46,3 +54,15 @@ export const ANTHROPIC_MODEL = raw.anthropic?.model     ?? 'claude-sonnet-4-6';
 export const OLLAMA_MODEL    = raw.ollama?.model        ?? 'llama3.2';
 export const OLLAMA_BASE_URL = raw.ollama?.base_url     ?? 'http://localhost:11434/v1';
 export const SOCKET_PATH     = raw.socket?.path         || path.join(RUNTIME_DIR, 'imitation.sock');
+
+// Per-model pricing table. Keys are model IDs as recorded in cost-audit.jsonl.
+export const PRICING: Record<string, { inputPerMillion: number; outputPerMillion: number; cacheWritePerMillion: number; cacheReadPerMillion: number }> = {};
+for (const [model, p] of Object.entries(raw.pricing ?? {})) {
+  if (typeof p !== 'object' || p === null) continue;
+  PRICING[model] = {
+    inputPerMillion:      p.input_per_million       ?? 0,
+    outputPerMillion:     p.output_per_million      ?? 0,
+    cacheWritePerMillion: p.cache_write_per_million ?? 0,
+    cacheReadPerMillion:  p.cache_read_per_million  ?? 0,
+  };
+}

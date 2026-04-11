@@ -18,3 +18,22 @@ base_url = "http://localhost:11434/v1"
 [socket]
 # Defaults to $XDG_RUNTIME_DIR/imitation/imitation.sock (or /tmp/imitation/imitation.sock)
 # path = "/custom/path/to/imitation.sock"
+
+# USD per million tokens, keyed by model ID — verify at https://anthropic.com/pricing
+[pricing."claude-sonnet-4-6"]
+input_per_million        = 3.00
+output_per_million       = 15.00
+cache_write_per_million  = 3.75
+cache_read_per_million   = 0.30
+
+[pricing."claude-opus-4-6"]
+input_per_million        = 15.00
+output_per_million       = 75.00
+cache_write_per_million  = 18.75
+cache_read_per_million   = 1.50
+
+[pricing."claude-haiku-4-5-20251001"]
+input_per_million        = 0.80
+output_per_million       = 4.00
+cache_write_per_million  = 1.00
+cache_read_per_million   = 0.08

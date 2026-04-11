@@ -373,7 +373,7 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
       generateAssessment(s.transcript.slice(0, -3), humanEntry.content, modelEntry.content, correct, {
         user1: { id: s.user1, name: getName(s.user1) ?? 'user1', messages: [] },
         user2: { id: s.user2, name: getName(s.user2) ?? 'user2', messages: [] },
-      }, s.lastSystemPrompt ?? '').then(assessment => appendAssessment(assessment, meta)).catch(() => {});
+      }, s.lastSystemPrompt ?? '', s.id).then(assessment => appendAssessment(assessment, meta)).catch(() => {});
     }
 
     await deliverRoundResultToSpectators(transport, s, guesserLabel, correct, reveal, s.scores, s.teamScores);
@@ -407,7 +407,7 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
       generateAssessment(s.transcript.slice(0, -3), humanEntry.content, modelEntry.content, correct, {
         user1: { id: s.user1, name: getName(s.user1) ?? 'user1', messages: [] },
         user2: { id: s.user2, name: getName(s.user2) ?? 'user2', messages: [] },
-      }, s.lastSystemPrompt ?? '').then(assessment => appendAssessment(assessment, meta)).catch(() => {});
+      }, s.lastSystemPrompt ?? '', s.id).then(assessment => appendAssessment(assessment, meta)).catch(() => {});
     }
 
     await deliverRoundResultToSpectators(transport, s, guesserLabel, correct, reveal, s.scores);
@@ -490,6 +490,7 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
       },
       stripped,
       getAssessmentsWithMeta(),
+      s.id,
     );
     const prediction = stripEmoji(predText);
     s.pendingPrediction = prediction;
@@ -537,6 +538,7 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
     },
     undefined,
     getAssessmentsWithMeta(),
+    s.id,
   );
   const prediction = stripEmoji(predText);
   s.lastSystemPrompt = sp;
