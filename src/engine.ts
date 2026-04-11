@@ -1,10 +1,10 @@
 import { GameSession, UserId } from './types';
 import { Transport } from './transport';
 import * as session from './session';
-import { generatePrediction, generateAssessment } from './imitation';
+import { generatePrediction, generateAssessment, buildCachedBlock } from './imitation';
 import {
   getProfile, appendMessage, getName, getOrAssignName, setName,
-  isValidName, getUserIdByName, appendAssessment, getAssessmentsWithMeta,
+  isValidName, getUserIdByName, appendAssessment, getAssessmentsWithMeta, touchUserSession,
 } from './userProfiles';
 import {
   deliverToSender, deliverToReceiver, deliverToSpectators,
@@ -15,6 +15,48 @@ import { diagNoSession } from './diag';
 
 function hasPlayers(s: GameSession): s is GameSession & { user1: UserId; user2: UserId } {
   return s.user1 !== null && s.user2 !== null;
+}
+
+// Called when a game becomes active (join or restart) to snapshot baseline state for prompt caching.
+function initGameCache(s: GameSession & { user1: UserId; user2: UserId }): void {
+  const user1Profile = getProfile(s.user1, s.user2);
+  const user2Profile = getProfile(s.user2, s.user1);
+  const allAssessments = getAssessmentsWithMeta();
+  s.baseUser1MsgCount = user1Profile.messages.length;
+  s.baseUser2MsgCount = user2Profile.messages.length;
+  s.baseAssessmentCount = allAssessments.length;
+  s.cachedSystemPromptBlock = buildCachedBlock(
+    {
+      user1: { id: s.user1, name: getName(s.user1) ?? 'user1', messages: user1Profile.messages },
+      user2: { id: s.user2, name: getName(s.user2) ?? 'user2', messages: user2Profile.messages },
+    },
+    allAssessments,
+  );
+}
+
+// Lazily rebuilds cachedSystemPromptBlock after a server restart using persisted base counts.
+function ensureGameCache(s: GameSession & { user1: UserId; user2: UserId }): void {
+  if (s.cachedSystemPromptBlock) return;
+  const base1 = s.baseUser1MsgCount ?? 0;
+  const base2 = s.baseUser2MsgCount ?? 0;
+  const baseA = s.baseAssessmentCount ?? 0;
+  s.cachedSystemPromptBlock = buildCachedBlock(
+    {
+      user1: { id: s.user1, name: getName(s.user1) ?? 'user1', messages: getProfile(s.user1, s.user2).messages.slice(0, base1) },
+      user2: { id: s.user2, name: getName(s.user2) ?? 'user2', messages: getProfile(s.user2, s.user1).messages.slice(0, base2) },
+    },
+    getAssessmentsWithMeta().slice(0, baseA),
+  );
+}
+
+function getDeltas(s: GameSession & { user1: UserId; user2: UserId }) {
+  return {
+    deltaMessages: {
+      user1: getProfile(s.user1, s.user2).messages.slice(s.baseUser1MsgCount ?? 0),
+      user2: getProfile(s.user2, s.user1).messages.slice(s.baseUser2MsgCount ?? 0),
+    },
+    deltaAssessments: getAssessmentsWithMeta().slice(s.baseAssessmentCount ?? 0),
+  };
 }
 
 function stripEmoji(text: string): string {
@@ -39,7 +81,6 @@ export const HELP_TEXT =
   '/human A|B — Guess which message was written by the human\n' +
   '/invite — Get the session invite; first to join becomes player 2, others watch\n' +
   '/status — Show current turn, score, and spectator count\n' +
-  '/stop — End the current game and show final scores\n' +
   '/leave — Leave the current session\n' +
   '/restart <user1> <user2> — Restart the game with two players from the session\n' +
   '/setname <name> — Set your display name\n' +
@@ -84,6 +125,10 @@ export async function handleJoin(
   const joined = session.acceptInvite(token, userId);
   if (joined) {
     getOrAssignName(userId);
+    touchUserSession(userId);
+    touchUserSession(joined.user1!);
+    initGameCache(joined as GameSession & { user1: UserId; user2: UserId });
+    session.persistSessions();
     if (joined.variation === 'original') {
       await transport.send(joined.user2!, HELP_TEXT);
       await transport.send(joined.user1!, 'Game started! You are the interrogator — ask your first question.');
@@ -99,6 +144,7 @@ export async function handleJoin(
   const watched = session.addSpectator(token, userId);
   if (watched) {
     getOrAssignName(userId);
+    touchUserSession(userId);
     const spectatorCount = watched.spectators.length;
     await transport.send(userId, HELP_TEXT);
     await transport.send(userId, 'You are now watching this game as a spectator.');
@@ -247,6 +293,8 @@ export async function handleRestart(
   if (!allParticipants.includes(id2)) { await transport.send(userId, `${name2} is not in this session.`); return; }
 
   session.restartWithPlayers(s, id1, id2);
+  initGameCache(s as GameSession & { user1: UserId; user2: UserId });
+  session.persistSessions();
 
   const msg1 = s.variation === 'original'
     ? 'Game restarted! You are the interrogator — ask your first question.'
@@ -260,29 +308,6 @@ export async function handleRestart(
   await Promise.all(s.spectators.map(id => transport.send(id, 'Game restarted with new players.')));
 }
 
-async function endAndNotify(s: GameSession, transport: Transport): Promise<void> {
-  let results: string;
-  if (s.variation === 'original') {
-    const avgTurns = s.roundCount > 0 ? (s.totalTurns / s.roundCount).toFixed(1) : '—';
-    results = `Game over.\nHumans: ${s.teamScores.humans} | Model: ${s.teamScores.model} | Avg turns to guess: ${avgTurns}`;
-  } else {
-    results = `Game over.\nUser 1: ${s.scores.user1} | User 2: ${s.scores.user2}`;
-  }
-  const recipients = [s.user1, s.user2, ...s.spectators].filter((id): id is UserId => id !== null);
-  await Promise.all(recipients.map(id => transport.send(id, results)));
-  logSession(s);
-  session.endSession(s);
-}
-
-export async function handleStop(userId: UserId, transport: Transport): Promise<void> {
-  const s = session.getSessionForUser(userId);
-  if (!s) {
-    await transport.send(userId, 'No active session.');
-    return;
-  }
-  await endAndNotify(s, transport);
-}
-
 export async function handleLeave(userId: UserId, transport: Transport): Promise<void> {
   const s = session.getSessionForSpectator(userId);
   if (s) {
@@ -294,6 +319,10 @@ export async function handleLeave(userId: UserId, transport: Transport): Promise
     await Promise.all([s.user1, s.user2].filter((id): id is UserId => id !== null).map(id =>
       transport.send(id, `${name} left. Spectators watching: ${spectatorCount}`)
     ));
+    if (s.user1 === null && s.user2 === null && s.spectators.length === 0) {
+      logSession(s);
+      session.endSession(s);
+    }
     return;
   }
 
@@ -311,6 +340,10 @@ export async function handleLeave(userId: UserId, transport: Transport): Promise
   await Promise.all(others.map(id =>
     transport.send(id, `${name} left the session.`)
   ));
+  if (ps.user1 === null && ps.user2 === null && ps.spectators.length === 0) {
+    logSession(ps);
+    session.endSession(ps);
+  }
 }
 
 export async function handleHuman(userId: UserId, guess: string, transport: Transport): Promise<void> {
@@ -320,6 +353,7 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
     return;
   }
   session.touchSession(s);
+  touchUserSession(userId);
   if (!hasPlayers(s)) {
     await transport.send(userId, 'The other player has left. Use /restart to begin a new game with available participants.');
     return;
@@ -369,11 +403,14 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
     const humanEntry = s.transcript[s.transcript.length - 3];
     if (modelEntry?.role === 'model' && humanEntry) {
       const imitateeId = humanEntry.role === 'user1' ? s.user1 : s.user2;
+      const witnessRole = humanEntry.role as 'user1' | 'user2';
       const meta = { sessionId: s.id, guessNumber: s.transcript.filter(e => e.role === 'guess').length, guesserId: userId, imitateeId, correct };
+      ensureGameCache(s);
+      const { deltaMessages, deltaAssessments } = getDeltas(s);
       generateAssessment(s.transcript.slice(0, -3), humanEntry.content, modelEntry.content, correct, {
-        user1: { id: s.user1, name: getName(s.user1) ?? 'user1', messages: [] },
-        user2: { id: s.user2, name: getName(s.user2) ?? 'user2', messages: [] },
-      }, s.lastSystemPrompt ?? '', s.id).then(assessment => appendAssessment(assessment, meta)).catch(() => {});
+        user1: { id: s.user1, name: getName(s.user1) ?? 'user1' },
+        user2: { id: s.user2, name: getName(s.user2) ?? 'user2' },
+      }, witnessRole, s.cachedSystemPromptBlock!, deltaMessages, deltaAssessments, s.id).then(assessment => appendAssessment(assessment, meta)).catch(() => {});
     }
 
     await deliverRoundResultToSpectators(transport, s, guesserLabel, correct, reveal, s.scores, s.teamScores);
@@ -403,11 +440,14 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
     const humanEntry = s.transcript[s.transcript.length - 3];
     if (modelEntry?.role === 'model' && humanEntry) {
       const imitateeId = humanEntry.role === 'user1' ? s.user1 : s.user2;
+      const witnessRole = humanEntry.role as 'user1' | 'user2';
       const meta = { sessionId: s.id, guessNumber: s.transcript.filter(e => e.role === 'guess').length, guesserId: userId, imitateeId, correct };
+      ensureGameCache(s);
+      const { deltaMessages, deltaAssessments } = getDeltas(s);
       generateAssessment(s.transcript.slice(0, -3), humanEntry.content, modelEntry.content, correct, {
-        user1: { id: s.user1, name: getName(s.user1) ?? 'user1', messages: [] },
-        user2: { id: s.user2, name: getName(s.user2) ?? 'user2', messages: [] },
-      }, s.lastSystemPrompt ?? '', s.id).then(assessment => appendAssessment(assessment, meta)).catch(() => {});
+        user1: { id: s.user1, name: getName(s.user1) ?? 'user1' },
+        user2: { id: s.user2, name: getName(s.user2) ?? 'user2' },
+      }, witnessRole, s.cachedSystemPromptBlock!, deltaMessages, deltaAssessments, s.id).then(assessment => appendAssessment(assessment, meta)).catch(() => {});
     }
 
     await deliverRoundResultToSpectators(transport, s, guesserLabel, correct, reveal, s.scores);
@@ -433,6 +473,7 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
     return;
   }
   session.touchSession(s);
+  touchUserSession(userId);
   if (!hasPlayers(s)) {
     await transport.send(userId, 'The other player has left. Use /restart to begin a new game with available participants.');
     return;
@@ -479,17 +520,19 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
       return;
     }
     const witnessRole = witnessId === s.user1 ? 'user1' : 'user2';
-    const witnessProfile = getProfile(witnessId, s.interrogator);
-    const interrogatorProfile = getProfile(s.interrogator, witnessId);
+    ensureGameCache(s);
+    const { deltaMessages: wDeltaMessages, deltaAssessments: wDeltaAssessments } = getDeltas(s);
     const { text: predText, systemPrompt: sp } = await generatePrediction(
       s.transcript,
       witnessRole,
       {
-        user1: { id: s.user1, name: getName(s.user1) ?? 'user1', messages: (s.user1 === witnessId ? witnessProfile : interrogatorProfile).messages },
-        user2: { id: s.user2, name: getName(s.user2) ?? 'user2', messages: (s.user2 === witnessId ? witnessProfile : interrogatorProfile).messages },
+        user1: { id: s.user1, name: getName(s.user1) ?? 'user1' },
+        user2: { id: s.user2, name: getName(s.user2) ?? 'user2' },
       },
+      s.cachedSystemPromptBlock!,
+      wDeltaMessages,
+      wDeltaAssessments,
       stripped,
-      getAssessmentsWithMeta(),
       s.id,
     );
     const prediction = stripEmoji(predText);
@@ -526,18 +569,20 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
 
   const senderRole = userId === s.user1 ? 'user1' : 'user2';
   const partnerId = session.getPartner(s, userId)!;
-  const senderProfile = getProfile(userId, partnerId);
-  const partnerProfile = getProfile(partnerId, userId);
 
+  ensureGameCache(s);
+  const { deltaMessages, deltaAssessments } = getDeltas(s);
   const { text: predText, systemPrompt: sp } = await generatePrediction(
     s.transcript,
     senderRole,
     {
-      user1: { id: s.user1, name: getName(s.user1) ?? 'user1', messages: (s.user1 === userId ? senderProfile : partnerProfile).messages },
-      user2: { id: s.user2, name: getName(s.user2) ?? 'user2', messages: (s.user2 === userId ? senderProfile : partnerProfile).messages },
+      user1: { id: s.user1, name: getName(s.user1) ?? 'user1' },
+      user2: { id: s.user2, name: getName(s.user2) ?? 'user2' },
     },
+    s.cachedSystemPromptBlock!,
+    deltaMessages,
+    deltaAssessments,
     undefined,
-    getAssessmentsWithMeta(),
     s.id,
   );
   const prediction = stripEmoji(predText);

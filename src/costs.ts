@@ -135,31 +135,41 @@ export function showBySession(): void {
     pad('calls', 7, true) +
     pad('input tokens', 14, true) +
     pad('output tokens', 15, true) +
+    pad('cache create', 14, true) +
+    pad('cache read', 12, true) +
     pad('cost (USD)', 12, true)
   );
-  console.log('-'.repeat(74));
+  console.log('-'.repeat(100));
 
   const allRows = [...entries];
   for (const [sessionId, rows] of groups) {
     const inTok  = rows.reduce((s, e) => s + e.inputTokens, 0);
     const outTok = rows.reduce((s, e) => s + e.outputTokens, 0);
+    const cc     = rows.reduce((s, e) => s + (e.cacheCreationTokens ?? 0), 0);
+    const cr     = rows.reduce((s, e) => s + (e.cacheReadTokens ?? 0), 0);
     console.log(
       pad(sessionId, 26) +
       pad(rows.length, 7, true) +
       pad(inTok.toLocaleString(), 14, true) +
       pad(outTok.toLocaleString(), 15, true) +
+      pad(cc > 0 ? cc.toLocaleString() : '-', 14, true) +
+      pad(cr > 0 ? cr.toLocaleString() : '-', 12, true) +
       pad(fmtCost(rows), 12, true)
     );
   }
 
-  console.log('-'.repeat(74));
+  console.log('-'.repeat(100));
   const grandIn  = allRows.reduce((s, e) => s + e.inputTokens, 0);
   const grandOut = allRows.reduce((s, e) => s + e.outputTokens, 0);
+  const grandCC  = allRows.reduce((s, e) => s + (e.cacheCreationTokens ?? 0), 0);
+  const grandCR  = allRows.reduce((s, e) => s + (e.cacheReadTokens ?? 0), 0);
   console.log(
     pad('total', 26) +
     pad(allRows.length, 7, true) +
     pad(grandIn.toLocaleString(), 14, true) +
     pad(grandOut.toLocaleString(), 15, true) +
+    pad(grandCC > 0 ? grandCC.toLocaleString() : '-', 14, true) +
+    pad(grandCR > 0 ? grandCR.toLocaleString() : '-', 12, true) +
     pad(fmtCost(allRows), 12, true)
   );
 }

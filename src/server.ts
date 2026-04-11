@@ -90,7 +90,6 @@ export function start(telegram: boolean): void {
         case 'b':       await engine.handleHuman(userId, 'B', transport); break;
         case 'invite':  await engine.handleInvite(userId, transport); break;
         case 'status':  await engine.handleStatus(userId, transport); break;
-        case 'stop':    await engine.handleStop(userId, transport); break;
         case 'leave':   await engine.handleLeave(userId, transport); break;
         case 'restart': await engine.handleRestart(userId, args[0] ?? '', args[1] ?? '', transport); break;
         case 'setname': await engine.handleSetName(userId, args[0] ?? '', transport); break;

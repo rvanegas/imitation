@@ -1,6 +1,9 @@
 {
   "name": "imitation",
   "version": "1.0.0",
+  "bin": {
+    "imitation": "bin/imitation.js"
+  },
   "scripts": {
     "dev": "ts-node src/main.ts",
     "build": "tsc",

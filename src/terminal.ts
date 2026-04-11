@@ -63,7 +63,6 @@ Game commands (issued as the active user):
   /human A|B              Submit a guess
   /invite                 Show the session invite token
   /status                 Show turn, score, and spectators
-  /stop                   End the game
   /leave                  Leave the session
   /restart <u1> <u2>      Restart with different players
   /setname <name>         Set your display name
@@ -146,9 +145,6 @@ Game commands (issued as the active user):
             break;
           case 'status':
             await engine.handleStatus(userId, transport);
-            break;
-          case 'stop':
-            await engine.handleStop(userId, transport);
             break;
           case 'leave':
             await engine.handleLeave(userId, transport);

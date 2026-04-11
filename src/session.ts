@@ -38,7 +38,7 @@ export function persistSessions(): void {
   const data = {
     sessions: Object.fromEntries(
       [...sessions.entries()].map(([id, s]) => {
-        const { timeoutHandle, lastSystemPrompt, ...rest } = s;
+        const { timeoutHandle, lastSystemPrompt, cachedSystemPromptBlock, ...rest } = s;
         return [id, rest];
       })
     ),

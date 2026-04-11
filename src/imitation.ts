@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
-import { TranscriptEntry, UserId } from './types';
+import { TranscriptEntry, UserId, SystemPromptBlock } from './types';
 import { ANTHROPIC_API_KEY, ANTHROPIC_MODEL, OLLAMA_BASE_URL, OLLAMA_MODEL, MODEL_PROVIDER } from './config';
 import { appendCostAudit } from './costAudit';
 
@@ -40,84 +40,142 @@ Rules:
 - Do not use emojis under any circumstances.
 - Write only the predicted message. No explanation, no prefix.`;
 
-interface PlayerInfo {
+interface Player {
   id: number;
   name: string;
+}
+
+interface PlayerWithMessages extends Player {
   messages: string[];
 }
 
-function buildSystemPrompt(
-  players: { user1: PlayerInfo; user2: PlayerInfo },
-  senderRole: 'user1' | 'user2',
-  isOpener: boolean,
-  selfFollow: boolean,
-  assessments: Array<{ text: string; imitateeId: UserId }>,
-): string {
-  const witness = players[senderRole];
-  const interrogatorRole = senderRole === 'user1' ? 'user2' : 'user1';
-  const interrogator = players[interrogatorRole];
+function toApiBlocks(blocks: SystemPromptBlock[]): Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }> {
+  return blocks.map(b => ({
+    type: 'text' as const,
+    text: b.text,
+    ...(b.cache ? { cache_control: { type: 'ephemeral' as const } } : {}),
+  }));
+}
 
+// Build the witness-neutral cached block for the game. Called once at game start.
+export function buildCachedBlock(
+  players: { user1: PlayerWithMessages; user2: PlayerWithMessages },
+  assessments: Array<{ text: string; imitateeId: UserId }>,
+): SystemPromptBlock[] {
   const sections: string[] = [];
 
   sections.push(`# Rules\n${BASE_PROMPT}`);
 
+  // Players listed neutrally — no interrogator/witness designation
   sections.push(
-    `# Players\nInterrogator: ${interrogator.id} (${interrogator.name})\nWitness (being imitated): ${witness.id} (${witness.name})`
+    `# Players\n${players.user1.id} (${players.user1.name})\n${players.user2.id} (${players.user2.name})`
   );
 
-  const pastMessagesSections: string[] = [];
-  pastMessagesSections.push(
-    `The following are real messages each user has sent in previous sessions. Use them to understand their communication styles. ` +
-    `For the witness specifically, match their style exactly in your prediction — pay close attention to message length, vocabulary, punctuation, use of slang, sentence structure, and any spelling or grammatical errors they make. ` +
+  const pastSections: string[] = [];
+  pastSections.push(
+    `The following are real messages each player has sent in previous sessions. Use them to understand their communication styles. ` +
+    `For the player you are imitating, match their style exactly — pay close attention to message length, vocabulary, punctuation, use of slang, sentence structure, and any spelling or grammatical errors they make. ` +
     `Reproduce errors at a similar rate and of a similar type. Do not silently correct their writing.\n\n` +
     `Do NOT reproduce any message verbatim, unless it is a very short, context-free phrase (e.g. "hi", "yes", "ok") where repetition is natural. ` +
     `For anything longer or more specific, treat it as a writing sample only — never copy or closely paraphrase it, since each was written in response to a context you do not have.`
   );
-  if (interrogator.messages.length > 0) {
-    const msgs = interrogator.messages.map((m, i) => `  ${i + 1}. ${m}`).join('\n');
-    pastMessagesSections.push(`## ${interrogator.id} (${interrogator.name})\n${msgs}`);
+  for (const p of [players.user1, players.user2]) {
+    if (p.messages.length > 0) {
+      const msgs = p.messages.map((m, i) => `  ${i + 1}. ${m}`).join('\n');
+      pastSections.push(`## ${p.id} (${p.name})\n${msgs}`);
+    } else {
+      pastSections.push(
+        `## ${p.id} (${p.name})\n` +
+        `No prior messages from this player. If imitating them, default to a very short, casual opener — one to five words is normal.`
+      );
+    }
   }
-  if (witness.messages.length > 0) {
-    const msgs = witness.messages.map((m, i) => `  ${i + 1}. ${m}`).join('\n');
-    pastMessagesSections.push(`## ${witness.id} (${witness.name})\n${msgs}`);
-  } else {
-    pastMessagesSections.push(
-      `## ${witness.id} (${witness.name})\n` +
-      `No prior messages from this user. Default to a very short, casual opener — one to five words is normal. Do not compose a full paragraph.`
-    );
-  }
-  sections.push(`# Past messages\n\n${pastMessagesSections.join('\n\n')}`);
 
-  const relevantAssessments = assessments.filter(
-    a => !a.imitateeId || a.imitateeId === 0 || a.imitateeId === witness.id
-  );
-  if (relevantAssessments.length > 0) {
-    const lines = relevantAssessments.map(a => {
-      const label = !a.imitateeId || a.imitateeId === 0 ? '[general]' : `[for ${witness.name}]`;
+  const block2Parts: string[] = [`# Past messages\n\n${pastSections.join('\n\n')}`];
+
+  if (assessments.length > 0) {
+    const lines = assessments.map(a => {
+      const label = !a.imitateeId || a.imitateeId === 0
+        ? '[general]'
+        : `[for ${[players.user1, players.user2].find(p => p.id === a.imitateeId)?.name ?? a.imitateeId}]`;
       return `- ${label} ${a.text}`;
     }).join('\n');
-    sections.push(`# Assessments\n${lines}`);
+    block2Parts.push(`# Assessments\n${lines}`);
   }
 
+  return [
+    { text: `# Rules\n${BASE_PROMPT}`, cache: true },
+    { text: block2Parts.join('\n\n'), cache: true },
+  ];
+}
+
+// Build the per-call delta blocks (uncached). Includes role designation, new messages/assessments, task context.
+function buildDeltaBlocks(
+  witnessRole: 'user1' | 'user2',
+  players: { user1: Player; user2: Player },
+  deltaMessages: { user1: string[]; user2: string[] },
+  deltaAssessments: Array<{ text: string; imitateeId: UserId }>,
+  isOpener: boolean,
+  selfFollow: boolean,
+): SystemPromptBlock[] {
+  const witness = players[witnessRole];
+  const interrogatorRole = witnessRole === 'user1' ? 'user2' : 'user1';
+  const interrogator = players[interrogatorRole];
+
+  const blocks: SystemPromptBlock[] = [];
+
+  // Always present: role designation
+  blocks.push({
+    text: `# Role\nYou are imitating ${witness.id} (${witness.name}). ${interrogator.id} (${interrogator.name}) is the interrogator.`,
+  });
+
+  // New messages added during this game
+  const u1Delta = deltaMessages.user1;
+  const u2Delta = deltaMessages.user2;
+  if (u1Delta.length > 0 || u2Delta.length > 0) {
+    const parts: string[] = ['# Messages added this game'];
+    for (const [p, delta] of [[players.user1, u1Delta], [players.user2, u2Delta]] as [Player, string[]][]) {
+      if (delta.length > 0) {
+        const msgs = delta.map((m, i) => `  ${i + 1}. ${m}`).join('\n');
+        parts.push(`## ${p.id} (${p.name})\n${msgs}`);
+      }
+    }
+    blocks.push({ text: parts.join('\n\n') });
+  }
+
+  // New assessments added during this game
+  if (deltaAssessments.length > 0) {
+    const lines = deltaAssessments.map(a => {
+      const label = !a.imitateeId || a.imitateeId === 0
+        ? '[general]'
+        : `[for ${[players.user1, players.user2].find(p => p.id === a.imitateeId)?.name ?? a.imitateeId}]`;
+      return `- ${label} ${a.text}`;
+    }).join('\n');
+    blocks.push({ text: `# Assessments added this game\n${lines}` });
+  }
+
+  // Task context (per-call)
   if (isOpener) {
-    sections.push(
-      `# Task context\nThe conversation has not started yet — you are generating an opening message. It must stand alone with no prior context. Default to a very short, casual opener. Do not ask a question or reference anything.`
-    );
+    blocks.push({
+      text: `# Task context\nThe conversation has not started yet — you are generating an opening message. It must stand alone with no prior context. Default to a very short, casual opener. Do not ask a question or reference anything.`,
+    });
   } else if (selfFollow) {
-    sections.push(
-      `# Task context\nThis user last spoke before an interruption (a scoring moment in the game). They are now sending their next message. The prior conversation is still context, but they are not replying to their own last message — predict something that moves the conversation forward naturally.`
-    );
+    blocks.push({
+      text: `# Task context\nThis user last spoke before an interruption (a scoring moment in the game). They are now sending their next message. The prior conversation is still context, but they are not replying to their own last message — predict something that moves the conversation forward naturally.`,
+    });
   }
 
-  return sections.join('\n\n');
+  return blocks;
 }
 
 export async function generatePrediction(
   transcript: TranscriptEntry[],
   senderRole: 'user1' | 'user2',
-  players: { user1: PlayerInfo; user2: PlayerInfo },
+  players: { user1: Player; user2: Player },
+  cachedBlock: SystemPromptBlock[],
+  deltaMessages: { user1: string[]; user2: string[] },
+  deltaAssessments: Array<{ text: string; imitateeId: UserId }>,
   questionContext?: string,
-  assessments: Array<{ text: string; imitateeId: UserId }> = [],
   sessionId?: string,
 ): Promise<{ text: string; systemPrompt: string }> {
   let prompt = '';
@@ -153,7 +211,9 @@ export async function generatePrediction(
   const lastRealRole = realMessages.at(-1)?.role ?? null;
   const selfFollow = !isOpener && !questionContext && lastRealRole === senderRole;
 
-  const systemPrompt = buildSystemPrompt(players, senderRole, isOpener, selfFollow, assessments);
+  const deltaBlocks = buildDeltaBlocks(senderRole, players, deltaMessages, deltaAssessments, isOpener, selfFollow);
+  const allBlocks = [...cachedBlock, ...deltaBlocks];
+  const systemPrompt = allBlocks.map(b => b.text).join('\n\n');
 
   if (useOllama()) {
     const ollama = getOllamaClient();
@@ -177,7 +237,7 @@ export async function generatePrediction(
     model: ANTHROPIC_MODEL,
     max_tokens: 8000,
     thinking: { type: 'enabled', budget_tokens: 1024 },
-    system: systemPrompt,
+    system: toApiBlocks(allBlocks),
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -203,8 +263,11 @@ export async function generateAssessment(
   humanMessage: string,
   aiPrediction: string,
   correct: boolean,
-  players: { user1: PlayerInfo; user2: PlayerInfo },
-  predictionSystemPrompt: string,
+  players: { user1: Player; user2: Player },
+  witnessRole: 'user1' | 'user2',
+  cachedBlock: SystemPromptBlock[],
+  deltaMessages: { user1: string[]; user2: string[] },
+  deltaAssessments: Array<{ text: string; imitateeId: UserId }>,
   sessionId?: string,
 ): Promise<string> {
   const outcome = correct
@@ -212,7 +275,6 @@ export async function generateAssessment(
     : 'The human was fooled — they thought the AI message was human.';
 
   let contextSection = '';
-  // transcript here is everything before the human message and model prediction
   const priorEntries = transcript.filter(e => e.role !== 'guess');
   if (priorEntries.length > 0) {
     let lastHumanRole: 'user1' | 'user2' | null = null;
@@ -228,9 +290,12 @@ export async function generateAssessment(
     contextSection = `Conversation context available during prediction:\n${lines.join('\n')}\n\n`;
   }
 
-  const systemPrompt =
-    predictionSystemPrompt +
-    `\n\n# Reflection\nThe imitation attempt is over. Reflect on how well you did across all dimensions of human-likeness: surface style (length, tone, vocabulary, punctuation), content choices (what topics were raised, whether they matched this person's interests and register), and conversational pragmatics (whether your turn performed the right speech act, how well you tracked the flow of the exchange, whether you responded to what was actually being asked or offered). Prior lessons you have accumulated are listed above under # Assessments. Write a new lesson that builds on them — extending, refining, or updating what is already known rather than repeating it. If the new attempt confirms an existing lesson, note any new nuance; if it contradicts one, revise your understanding. Write in abstract terms applicable to future imitations of this witness. Do not reference the specific messages or conversation. Write in English regardless of the conversation language, so assessments remain consistent across sessions.`;
+  const reflectionText =
+    `# Reflection\nThe imitation attempt is over. Reflect on how well you did across all dimensions of human-likeness: surface style (length, tone, vocabulary, punctuation), content choices (what topics were raised, whether they matched this person's interests and register), and conversational pragmatics (whether your turn performed the right speech act, how well you tracked the flow of the exchange, whether you responded to what was actually being asked or offered). Prior lessons you have accumulated are listed above under # Assessments and # Assessments added this game. Write a new lesson that builds on them — extending, refining, or updating what is already known rather than repeating it. If the new attempt confirms an existing lesson, note any new nuance; if it contradicts one, revise your understanding. Write in abstract terms applicable to future imitations of this witness. Do not reference the specific messages or conversation. Write in English regardless of the conversation language, so assessments remain consistent across sessions.`;
+
+  const deltaBlocks = buildDeltaBlocks(witnessRole, players, deltaMessages, deltaAssessments, false, false);
+  const allBlocks = [...cachedBlock, ...deltaBlocks, { text: reflectionText }];
+  const systemPrompt = allBlocks.map(b => b.text).join('\n\n');
 
   const prompt =
     `You just attempted to imitate a human in a Turing Test.\n\n` +
@@ -263,7 +328,7 @@ export async function generateAssessment(
   const response = await client.messages.create({
     model: ANTHROPIC_MODEL,
     max_tokens: 256,
-    system: systemPrompt,
+    system: toApiBlocks(allBlocks),
     messages: [{ role: 'user', content: prompt }],
   });
 

@@ -1,6 +1,11 @@
 export type UserId = number;
 export type SenderRole = 'user1' | 'user2' | 'model' | 'guess';
 
+export interface SystemPromptBlock {
+  text: string;
+  cache?: true;  // → cache_control: { type: 'ephemeral' } in Anthropic API call
+}
+
 export interface TranscriptEntry {
   role: SenderRole;
   content: string;
@@ -31,6 +36,12 @@ export interface GameSession {
   roundCount: number;                  // original: number of rounds completed
   spectators: UserId[];
   lastSystemPrompt?: string;
+  // Persisted — baseline snapshot counts captured at game start; used to reconstruct cachedSystemPromptBlock after restart
+  baseUser1MsgCount?: number;
+  baseUser2MsgCount?: number;
+  baseAssessmentCount?: number;
+  // Transient — not persisted; rebuilt lazily after restart using base counts above
+  cachedSystemPromptBlock?: SystemPromptBlock[];
   lastActivity: number;
 }
 
@@ -43,4 +54,5 @@ export interface UserProfile {
   messages: string[];
   name?: string;
   telegramId?: number;
+  lastSession?: string;  // ISO timestamp of most recent presence in a game session
 }

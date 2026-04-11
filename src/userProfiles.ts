@@ -57,19 +57,39 @@ function loadStore(): Store {
   } catch { return { ...EMPTY_STORE, users: {}, pairs: {}, assessments: { list: [] } }; }
 }
 
+const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
 function saveStore(store: Store): void {
+  const now = Date.now();
+  const stale = new Set<string>();
+  for (const [key, profile] of Object.entries(store.users)) {
+    if (profile.name && RESERVED_NAME_RE.test(profile.name)) {
+      const last = profile.lastSession ? new Date(profile.lastSession).getTime() : 0;
+      if (now - last > ONE_WEEK_MS) stale.add(key);
+    }
+  }
+  const users = Object.fromEntries(
+    Object.entries(store.users)
+      .filter(([k]) => !stale.has(k))
+      .sort(([a], [b]) => +a - +b)
+  );
+  const pairs = Object.fromEntries(
+    Object.entries(store.pairs).filter(([k]) => {
+      const [a, b] = k.split(':');
+      return !stale.has(a) && !stale.has(b);
+    })
+  );
+  const assessments = {
+    list: store.assessments.list
+      .filter(r => !stale.has(r.guesserId.toString()) && !stale.has(r.imitateeId.toString()))
+      .sort((a, b) => a.timestamp.localeCompare(b.timestamp)),
+  };
   const out = {
     counter: store.counter,
     nextId:  store.nextId,
-    users: Object.fromEntries(
-      Object.entries(store.users).sort(([a], [b]) => +a - +b)
-    ),
-    pairs: store.pairs,
-    assessments: {
-      list: [...store.assessments.list].sort((a, b) =>
-        a.timestamp.localeCompare(b.timestamp)
-      ),
-    },
+    users,
+    pairs,
+    assessments,
   };
   fs.writeFileSync(PROFILES_PATH, JSON.stringify(out, null, 2));
 }
@@ -79,9 +99,10 @@ export function getProfile(userId: UserId, partnerId: UserId): UserProfile {
 }
 
 const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,31}$/;
+const RESERVED_NAME_RE = /^user[0-9]+$/;
 
 export function isValidName(name: string): boolean {
-  return NAME_RE.test(name);
+  return NAME_RE.test(name) && !RESERVED_NAME_RE.test(name);
 }
 
 export function getName(userId: UserId): string | undefined {
@@ -145,6 +166,13 @@ export function getOrAssignName(userId: UserId): string {
   store.users[key] = { ...store.users[key], messages: store.users[key]?.messages ?? [], name };
   saveStore(store);
   return name;
+}
+
+export function touchUserSession(userId: UserId): void {
+  const store = loadStore();
+  const key = userId.toString();
+  store.users[key] = { ...store.users[key], messages: store.users[key]?.messages ?? [], lastSession: new Date().toISOString() };
+  saveStore(store);
 }
 
 export function setName(userId: UserId, name: string): void {

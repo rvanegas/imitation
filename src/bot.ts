@@ -51,7 +51,6 @@ export function setupTelegram(
   bot.command('help',    async (ctx) => engine.handleHelp(uid(ctx), transport));
   bot.command('invite',  async (ctx) => engine.handleInvite(uid(ctx), transport));
   bot.command('status',  async (ctx) => engine.handleStatus(uid(ctx), transport));
-  bot.command('stop',    async (ctx) => engine.handleStop(uid(ctx), transport));
   bot.command('leave',   async (ctx) => engine.handleLeave(uid(ctx), transport));
   bot.command('setname', async (ctx) => {
     const name = ctx.message.text.split(/\s+/)[1] ?? '';
