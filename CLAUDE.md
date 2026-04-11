@@ -62,6 +62,7 @@ This is a game implementing the Imitation Game (Turing Test) in two variations. 
 - `src/types.ts` — Shared TypeScript interfaces (`GameSession`, `TranscriptEntry`, `MessagePair`, `UserProfile`)
 - `src/log.ts` — Session logging
 - `src/migrate.ts` — Data migration utility
+- `src/userProfiles.ts` — **TODO:** remove `migrateFlat()` and its call in `loadStore()` once the new nested `user_profiles.json` format has been confirmed in production (auto-migration runs lazily on first server start after deploy)
 
 **Key state in `GameSession`:**
 - `variation` — `'symmetric'` or `'original'`

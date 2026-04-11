@@ -68,21 +68,22 @@ function migrate(): void {
   }
 
   // ── Build new profile store ───────────────────────────────────────────────
-  const out: Record<string, any> = {};
+  const users: Record<string, any> = {};
+  const pairs: Record<string, any> = {};
 
   // Terminal user entries (keep as-is)
   for (const [id, profile] of smallUsers) {
-    out[id.toString()] = { ...profile };
+    users[id.toString()] = { ...profile };
   }
 
   // Telegram user entries (rekeyed, telegramId added)
   for (const [oldId, profile] of largeUsers) {
     const newId = idMap.get(oldId)!;
-    if (out[newId.toString()]) {
+    if (users[newId.toString()]) {
       // Merging into an existing small-ID entry
-      out[newId.toString()] = { ...out[newId.toString()], telegramId: oldId };
+      users[newId.toString()] = { ...users[newId.toString()], telegramId: oldId };
     } else {
-      out[newId.toString()] = { ...profile, telegramId: oldId };
+      users[newId.toString()] = { ...profile, telegramId: oldId };
     }
   }
 
@@ -94,35 +95,41 @@ function migrate(): void {
     const b = parseInt(rawB, 10);
     if (isNaN(a) || isNaN(b)) continue;
     const newKey = `${idMap.get(a) ?? a}:${idMap.get(b) ?? b}`;
-    if (out[newKey]) {
-      const existing: string[] = out[newKey].messages ?? [];
+    if (pairs[newKey]) {
+      const existing: string[] = pairs[newKey].messages ?? [];
       const incoming: string[] = value.messages ?? [];
       const merged = Array.from(new Set([...existing, ...incoming]));
-      out[newKey] = { messages: merged };
+      pairs[newKey] = { messages: merged };
       console.log(`Merged pair ${key} → ${newKey} (${merged.length} msgs)`);
     } else {
-      out[newKey] = { ...value };
+      pairs[newKey] = { ...value };
     }
   }
 
   // Assessments: remap guesserId / imitateeId
-  if (profiles['__assessments']) {
-    const list = (profiles['__assessments'].list ?? []).map((a: any) => ({
-      ...a,
-      guesserId: idMap.get(a.guesserId) ?? a.guesserId,
-      imitateeId: idMap.get(a.imitateeId) ?? a.imitateeId,
-    }));
-    out['__assessments'] = { list };
-  }
+  const assessmentList = (profiles['__assessments']?.list ?? profiles.assessments?.list ?? []).map((a: any) => ({
+    ...a,
+    guesserId: idMap.get(a.guesserId) ?? a.guesserId,
+    imitateeId: idMap.get(a.imitateeId) ?? a.imitateeId,
+  }));
 
-  // Other special keys
-  if (profiles['__counter'] !== undefined) out['__counter'] = profiles['__counter'];
+  const counter = profiles['__counter'] ?? profiles.counter ?? 0;
 
-  // Server ID counter for future allocations
-  out['__nextId'] = nextId;
+  // Write new nested format; sort user ids numerically, assessments by timestamp
+  const out = {
+    counter,
+    nextId,
+    users: Object.fromEntries(
+      Object.entries(users).sort(([a], [b]) => +a - +b)
+    ),
+    pairs,
+    assessments: {
+      list: assessmentList.sort((a: any, b: any) => a.timestamp.localeCompare(b.timestamp)),
+    },
+  };
 
   fs.writeFileSync(PROFILES_PATH, JSON.stringify(out, null, 2));
-  console.log(`\nuser_profiles.json written. __nextId = ${nextId}`);
+  console.log(`\nuser_profiles.json written. nextId = ${nextId}`);
 
   // ── Migrate sessions.json ─────────────────────────────────────────────────
   if (sessions) {

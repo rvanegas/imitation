@@ -44,7 +44,3 @@ export interface UserProfile {
   name?: string;
   telegramId?: number;
 }
-
-export interface UserProfileStore {
-  [userId: string]: UserProfile;
-}
