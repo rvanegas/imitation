@@ -4,9 +4,10 @@
 export const SERVER_URL = 'ws://192.168.7.150:8080'; // update to your server's address
 
 export type ServerMessage =
-  | { type: 'ready'; name: string; token?: string }
-  | { type: 'msg';   text: string }
-  | { type: 'error'; text: string };
+  | { type: 'ready';      name: string; token?: string }
+  | { type: 'msg';        text: string }
+  | { type: 'nameUpdate'; name: string }
+  | { type: 'error';      text: string };
 
 export type MessageHandler = (msg: ServerMessage) => void;
 
@@ -38,8 +39,8 @@ export class ImitationClient {
     this.ws.onerror = () => { if (!this.closing) this.onDisconnect(); };
   }
 
-  bootstrap(inviteToken: string, name: string): void {
-    this.send({ type: 'bootstrap', inviteToken, name });
+  bootstrap(sessionToken: string): void {
+    this.send({ type: 'bootstrap', sessionToken });
   }
 
   login(token: string): void {

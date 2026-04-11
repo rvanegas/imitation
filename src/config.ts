@@ -17,9 +17,8 @@ for (const dir of [CONFIG_DIR, STATE_DIR, RUNTIME_DIR]) {
 }
 
 // Persistent state file paths
-export const SESSIONS_FILE   = path.join(STATE_DIR, 'sessions.json');
-export const PROFILES_FILE   = path.join(STATE_DIR, 'user_profiles.json');
-export const WS_INVITES_FILE = path.join(STATE_DIR, 'ws-invites.json');
+export const SESSIONS_FILE = path.join(STATE_DIR, 'sessions.json');
+export const PROFILES_FILE = path.join(STATE_DIR, 'user_profiles.json');
 
 interface PricingEntry {
   input_per_million?: number;

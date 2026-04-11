@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, Button, FlatList,
   StyleSheet, KeyboardAvoidingView, Platform,
@@ -22,6 +22,10 @@ export default function GameScreen({ client, name, messages, onSend }: Props) {
   const [input, setInput] = useState('');
   const listRef = useRef<FlatList>(null);
 
+  useEffect(() => {
+    if (messages.length > 0) listRef.current?.scrollToEnd({ animated: true });
+  }, [messages]);
+
   function send() {
     const text = input.trim();
     if (!text) return;
@@ -40,7 +44,6 @@ export default function GameScreen({ client, name, messages, onSend }: Props) {
         ref={listRef}
         data={messages}
         keyExtractor={m => m.id}
-        onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
         renderItem={({ item }) => (
           <View style={[styles.bubble, item.incoming ? styles.incoming : styles.outgoing]}>
             <Text style={[styles.bubbleText, !item.incoming && styles.bubbleTextOut]}>{item.text}</Text>

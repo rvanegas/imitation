@@ -4,7 +4,7 @@ diagProcessStart();
 const [,, cmd, ...args] = process.argv;
 
 function usage(): never {
-  console.error('Usage: npm run dev <server [--no-telegram|-t] | terminal <name> | costs [--by-session|-s] | invite>');
+  console.error('Usage: npm run dev <server [--no-telegram|-t] | terminal <name> | costs [--by-session|-s]>');
   process.exit(1);
 }
 
@@ -33,12 +33,6 @@ switch (cmd) {
     } else {
       costs.showSummary();
     }
-    break;
-  }
-  case 'invite': {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const token = require('./userProfiles').createWsInviteToken();
-    console.log(token);
     break;
   }
   default:

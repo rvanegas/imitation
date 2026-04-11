@@ -83,6 +83,10 @@ export function createInvite(userId: UserId, variation: 'symmetric' | 'original'
   return sessionToken;
 }
 
+export function hasPendingInvite(token: string): boolean {
+  return pendingSessions.has(token);
+}
+
 export function isOwnInvite(token: string, userId: UserId): boolean {
   const entry = pendingSessions.get(token);
   return entry !== undefined && entry.userId === userId;

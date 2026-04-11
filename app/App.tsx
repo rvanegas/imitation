@@ -7,6 +7,9 @@ import GameScreen, { ChatMessage } from './src/screens/GameScreen';
 
 type Screen = 'loading' | 'login' | 'game';
 
+let msgCounter = 0;
+function nextId(): string { return String(++msgCounter); }
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>('loading');
   const [client, setClient] = useState<ImitationClient | null>(null);
@@ -38,8 +41,10 @@ export default function App() {
       setPlayerName(msg.name);
       setClient(c);
       setScreen('game');
+    } else if (msg.type === 'nameUpdate') {
+      setPlayerName(msg.name);
     } else if (msg.type === 'msg') {
-      setMessages(prev => [...prev, { id: Date.now().toString(), text: msg.text, incoming: true }]);
+      setMessages(prev => [...prev, { id: nextId(), text: msg.text, incoming: true }]);
     }
   }
 
@@ -67,7 +72,7 @@ export default function App() {
       client={client!}
       name={playerName}
       messages={messages}
-      onSend={(text) => setMessages(prev => [...prev, { id: Date.now().toString(), text, incoming: false }])}
+      onSend={(text) => setMessages(prev => [...prev, { id: nextId(), text, incoming: false }])}
     />
   );
 }

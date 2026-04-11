@@ -1,10 +1,8 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { Transport } from './transport';
 import { UserId } from './types';
-import {
-  getName, getOrCreateUserIdByName,
-  consumeWsInviteToken, setWsToken, getUserIdByWsToken,
-} from './userProfiles';
+import { getName, getOrAssignName, createAnonymousUser, setWsToken, getUserIdByWsToken } from './userProfiles';
+import { hasPendingInvite } from './session';
 
 export class WebSocketTransport implements Transport {
   private sockets = new Map<UserId, WebSocket>();
@@ -47,27 +45,28 @@ export function startWebSocketServer(
     let userId: UserId | null = null;
 
     ws.on('message', async (data) => {
-      let msg: { type: string; inviteToken?: string; name?: string; token?: string; text?: string };
+      let msg: { type: string; sessionToken?: string; token?: string; text?: string };
       try { msg = JSON.parse(data.toString()); } catch { return; }
 
       if (userId === null) {
         if (msg.type === 'bootstrap') {
-          const inviteToken = (msg.inviteToken ?? '').trim();
-          const name = (msg.name ?? '').trim();
-          if (!inviteToken || !name) {
-            ws.send(JSON.stringify({ type: 'error', text: 'inviteToken and name required.' }));
+          const sessionToken = (msg.sessionToken ?? '').trim();
+          if (!sessionToken) {
+            ws.send(JSON.stringify({ type: 'error', text: 'sessionToken required.' }));
             return;
           }
-          if (!consumeWsInviteToken(inviteToken)) {
-            ws.send(JSON.stringify({ type: 'error', text: 'Invalid or already used invite token.' }));
+          if (!hasPendingInvite(sessionToken)) {
+            ws.send(JSON.stringify({ type: 'error', text: 'Invalid or expired session token.' }));
             return;
           }
-          const id = getOrCreateUserIdByName(name);
+          const id = createAnonymousUser();
           const userToken = crypto.randomUUID();
           setWsToken(id, userToken);
           userId = id;
           transport.register(userId, ws);
-          ws.send(JSON.stringify({ type: 'ready', name: getName(id) ?? name, token: userToken }));
+          const name = getOrAssignName(id);
+          ws.send(JSON.stringify({ type: 'ready', name, token: userToken }));
+          await dispatch(userId, `/start ${sessionToken}`);
           return;
         }
 
@@ -98,6 +97,10 @@ export function startWebSocketServer(
 
       try {
         await dispatch(userId, text);
+        if (text.toLowerCase().startsWith('/setname ')) {
+          const newName = getName(userId);
+          if (newName) ws.send(JSON.stringify({ type: 'nameUpdate', name: newName }));
+        }
       } catch (err) {
         ws.send(JSON.stringify({ type: 'error', text: String(err) }));
       }

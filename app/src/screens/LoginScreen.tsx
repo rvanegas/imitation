@@ -8,13 +8,12 @@ interface Props {
 }
 
 export default function LoginScreen({ onAuthenticated }: Props) {
-  const [inviteToken, setInviteToken] = useState('');
-  const [name, setName] = useState('');
+  const [sessionToken, setSessionToken] = useState('');
   const [loading, setLoading] = useState(false);
 
-  function handleConnect() {
-    if (!inviteToken.trim() || !name.trim()) {
-      Alert.alert('Both invite token and name are required.');
+  function handleJoin() {
+    if (!sessionToken.trim()) {
+      Alert.alert('Session token required.');
       return;
     }
     setLoading(true);
@@ -33,11 +32,11 @@ export default function LoginScreen({ onAuthenticated }: Props) {
       },
       () => {
         setLoading(false);
-        Alert.alert('Connection failed. Check the server address and invite token.');
+        Alert.alert('Connection failed. Check the server address.');
       },
     );
 
-    client.connect(() => client.bootstrap(inviteToken.trim(), name.trim()));
+    client.connect(() => client.bootstrap(sessionToken.trim()));
   }
 
   return (
@@ -45,23 +44,15 @@ export default function LoginScreen({ onAuthenticated }: Props) {
       <Text style={styles.title}>Imitation Game</Text>
       <TextInput
         style={styles.input}
-        placeholder="Invite token"
+        placeholder="Session token"
         autoCapitalize="none"
         autoCorrect={false}
-        value={inviteToken}
-        onChangeText={setInviteToken}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Your name"
-        autoCapitalize="none"
-        autoCorrect={false}
-        value={name}
-        onChangeText={setName}
+        value={sessionToken}
+        onChangeText={setSessionToken}
       />
       {loading
         ? <ActivityIndicator />
-        : <Button title="Join" onPress={handleConnect} />
+        : <Button title="Join" onPress={handleJoin} />
       }
     </View>
   );
