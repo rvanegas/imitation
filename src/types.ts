@@ -42,6 +42,7 @@ export interface GameSession {
   baseAssessmentCount?: number;
   // Transient — not persisted; rebuilt lazily after restart using base counts above
   cachedSystemPromptBlock?: SystemPromptBlock[];
+  createdAt: number;
   lastActivity: number;
 }
 

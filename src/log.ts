@@ -37,6 +37,7 @@ function writeLog(session: GameSession, ended: boolean): void {
     `User 1: ${session.user1}`,
     `User 2: ${session.user2}`,
   ];
+  if (session.createdAt) headerLines.push(`Started: ${new Date(session.createdAt).toISOString()}`);
   if (ended) headerLines.push(`Ended: ${new Date().toISOString()}`);
 
   headerLines.push('', '--- System Prompt ---', '');

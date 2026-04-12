@@ -28,7 +28,9 @@ function scheduleTimeout(s: GameSession): void {
 }
 
 function generateSessionToken(): string {
-  return Math.random().toString(36).slice(2, 8);
+  let pin: string;
+  do { pin = String(Math.floor(Math.random() * 10000)).padStart(4, '0'); } while (sessions.has(pin));
+  return pin;
 }
 
 export function persistSessions(): void {
@@ -85,6 +87,7 @@ export function createInvite(userId: UserId, variation: 'symmetric' | 'original'
     totalTurns: 0,
     roundCount: 0,
     spectators: [],
+    createdAt: Date.now(),
     lastActivity: Date.now(),
   };
   scheduleTimeout(s);
