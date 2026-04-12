@@ -92,6 +92,24 @@ export async function handleVariationSelect(
   transport: Transport,
 ): Promise<void> {
   getOrAssignName(userId);
+
+  const existing = session.getSessionForParticipant(userId);
+  if (existing) {
+    const name = getName(userId) ?? 'Someone';
+    if (session.isPlayer(existing, userId)) {
+      const partner = session.getPartner(existing, userId);
+      const others = [partner, ...existing.spectators].filter((id): id is UserId => id !== null);
+      session.removePlayer(existing, userId);
+      await Promise.all(others.map(id => transport.send(id, `${name} left the session.`)));
+    } else {
+      session.removeSpectator(existing, userId);
+    }
+    if (existing.user1 === null && existing.user2 === null && existing.spectators.length === 0) {
+      logSession(existing);
+      session.endSession(existing);
+    }
+  }
+
   const sessionToken = session.createInvite(userId, variation);
   const link = transport.makeInviteLink(sessionToken);
   const label = variation === 'original' ? 'Original Turing Test' : 'Symmetric';

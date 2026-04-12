@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, memo } from 'react';
 import {
-  View, Text, TextInput, Button, FlatList,
+  View, Text, TextInput, Button, Pressable, FlatList,
   StyleSheet, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { ImitationClient } from '../ws';
@@ -16,9 +16,16 @@ interface Props {
   name: string;
   messages: ChatMessage[];
   onSend: (text: string) => void;
+  onSignOut: () => void;
 }
 
-export default function GameScreen({ client, name, messages, onSend }: Props) {
+const Bubble = memo(({ item }: { item: ChatMessage }) => (
+  <View style={[styles.bubble, item.incoming ? styles.incoming : styles.outgoing]}>
+    <Text style={[styles.bubbleText, !item.incoming && styles.bubbleTextOut]}>{item.text}</Text>
+  </View>
+));
+
+export default function GameScreen({ client, name, messages, onSend, onSignOut }: Props) {
   const [input, setInput] = useState('');
   const listRef = useRef<FlatList>(null);
 
@@ -39,16 +46,17 @@ export default function GameScreen({ client, name, messages, onSend }: Props) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <Text style={styles.header}>Playing as {name}</Text>
+      <View style={styles.headerRow}>
+        <Text style={styles.header}>Playing as {name}</Text>
+        <Pressable onPress={onSignOut}>
+          <Text style={styles.signOut}>Sign out</Text>
+        </Pressable>
+      </View>
       <FlatList
         ref={listRef}
         data={messages}
         keyExtractor={m => m.id}
-        renderItem={({ item }) => (
-          <View style={[styles.bubble, item.incoming ? styles.incoming : styles.outgoing]}>
-            <Text style={[styles.bubbleText, !item.incoming && styles.bubbleTextOut]}>{item.text}</Text>
-          </View>
-        )}
+        renderItem={({ item }) => <Bubble item={item} />}
         style={styles.list}
       />
       <View style={styles.inputRow}>
@@ -68,7 +76,9 @@ export default function GameScreen({ client, name, messages, onSend }: Props) {
 
 const styles = StyleSheet.create({
   container:      { flex: 1, paddingTop: 56 },
-  header:         { textAlign: 'center', fontWeight: '600', marginBottom: 8 },
+  headerRow:      { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginBottom: 8, paddingHorizontal: 12 },
+  header:         { flex: 1, textAlign: 'center', fontWeight: '600' },
+  signOut:        { fontSize: 13, color: '#007aff' },
   list:           { flex: 1, paddingHorizontal: 12 },
   bubble:         { borderRadius: 12, padding: 10, marginVertical: 4, maxWidth: '80%' },
   incoming:       { backgroundColor: '#e5e5ea', alignSelf: 'flex-start' },

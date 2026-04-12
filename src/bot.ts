@@ -5,6 +5,7 @@ import { UserId } from './types';
 import * as engine from './engine';
 import { getOrCreateUserIdForTelegram } from './userProfiles';
 import { BOT_TOKEN } from './config';
+import { createLinkToken } from './linkTokens';
 
 function uid(ctx: { from: { id: number } }): UserId {
   return getOrCreateUserIdForTelegram(ctx.from.id);
@@ -49,6 +50,13 @@ export function setupTelegram(
   });
 
   bot.command('help',    async (ctx) => engine.handleHelp(uid(ctx), transport));
+  bot.command('link', async (ctx) => {
+    const token = createLinkToken(uid(ctx));
+    await ctx.reply(
+      `Your link token:\n\n<code>${token}</code>\n\nEnter it in the iPhone app within 10 minutes. This token can only be used once.`,
+      { parse_mode: 'HTML' },
+    );
+  });
   bot.command('invite',  async (ctx) => engine.handleInvite(uid(ctx), transport));
   bot.command('status',  async (ctx) => engine.handleStatus(uid(ctx), transport));
   bot.command('leave',   async (ctx) => engine.handleLeave(uid(ctx), transport));

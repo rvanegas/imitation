@@ -3,6 +3,7 @@ import { Transport } from './transport';
 import { UserId } from './types';
 import { getName, getOrAssignName, createAnonymousUser, setWsToken, getUserIdByWsToken } from './userProfiles';
 import { isValidSessionToken } from './session';
+import { consumeLinkToken } from './linkTokens';
 
 export class WebSocketTransport implements Transport {
   private sockets = new Map<UserId, WebSocket>();
@@ -45,7 +46,7 @@ export function startWebSocketServer(
     let userId: UserId | null = null;
 
     ws.on('message', async (data) => {
-      let msg: { type: string; sessionToken?: string; token?: string; text?: string };
+      let msg: { type: string; sessionToken?: string; token?: string; linkToken?: string; text?: string };
       try { msg = JSON.parse(data.toString()); } catch { return; }
 
       if (userId === null) {
@@ -84,6 +85,26 @@ export function startWebSocketServer(
           userId = id;
           transport.register(userId, ws);
           ws.send(JSON.stringify({ type: 'ready', name: getName(id) ?? '' }));
+          return;
+        }
+
+        if (msg.type === 'link') {
+          const linkToken = (msg.linkToken ?? '').trim().toUpperCase();
+          if (!linkToken) {
+            ws.send(JSON.stringify({ type: 'error', text: 'linkToken required.' }));
+            return;
+          }
+          const id = consumeLinkToken(linkToken);
+          if (id === undefined) {
+            ws.send(JSON.stringify({ type: 'error', text: 'Invalid or expired link token.' }));
+            return;
+          }
+          const userToken = crypto.randomUUID();
+          setWsToken(id, userToken);
+          userId = id;
+          transport.register(userId, ws);
+          const name = getOrAssignName(id);
+          ws.send(JSON.stringify({ type: 'ready', name, token: userToken }));
           return;
         }
 

@@ -84,6 +84,13 @@ export default function App() {
       name={playerName}
       messages={messages}
       onSend={(text) => setMessages(prev => [...prev, { id: nextId(), text, incoming: false }])}
+      onSignOut={() => {
+        client?.disconnect();
+        clearToken();
+        setClient(null);
+        setMessages([]);
+        setScreen('login');
+      }}
     />
   );
 }

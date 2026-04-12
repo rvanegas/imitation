@@ -1,12 +1,11 @@
 import * as fs from 'fs';
 import { GameSession, SenderRole, UserId } from './types';
-import { diagSessionCreated, diagSessionEnded, diagSessionsLoaded, diagUserMapped, diagUserUnmapped } from './diag';
+import { diagSessionCreated, diagSessionEnded, diagSessionsLoaded } from './diag';
 import { SESSIONS_FILE } from './config';
 
 const sessions = new Map<string, GameSession>();
-const participantToSession = new Map<UserId, string>();
 
-const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+const SESSION_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 1 day
 
 let timeoutCallback: ((s: GameSession) => Promise<void>) | null = null;
 
@@ -60,11 +59,6 @@ export function loadPersistedSessions(): void {
     const s: GameSession = { ...persisted, timeoutHandle: null as any };
     scheduleTimeout(s);
     sessions.set(id, s);
-    if (s.user1 != null) { participantToSession.set(s.user1, id); diagUserMapped(s.user1, id); }
-    if (s.user2 != null) { participantToSession.set(s.user2, id); diagUserMapped(s.user2, id); }
-    for (const spectatorId of s.spectators ?? []) {
-      participantToSession.set(spectatorId, id);
-    }
   }
   diagSessionsLoaded(loadedCount);
 }
@@ -95,8 +89,6 @@ export function createInvite(userId: UserId, variation: 'symmetric' | 'original'
   };
   scheduleTimeout(s);
   sessions.set(s.id, s);
-  participantToSession.set(userId, sessionToken);
-  diagUserMapped(userId, sessionToken);
   persistSessions();
   return sessionToken;
 }
@@ -116,9 +108,7 @@ export function acceptInvite(token: string, userId: UserId): GameSession | null 
 
   s.user2 = userId;
   s.imitationFirst = Math.random() < 0.5;
-  participantToSession.set(userId, token);
   diagSessionCreated(s.id, s.user1!, userId);
-  diagUserMapped(userId, s.id);
 
   persistSessions();
   return s;
@@ -130,16 +120,16 @@ export function addSpectator(sessionId: string, userId: UserId): GameSession | n
   if (userId === session.user1 || userId === session.user2) return null;
   if (!session.spectators.includes(userId)) {
     session.spectators.push(userId);
-    participantToSession.set(userId, session.id);
   }
   persistSessions();
   return session;
 }
 
 export function getSessionForParticipant(userId: UserId): GameSession | undefined {
-  const sessionId = participantToSession.get(userId);
-  if (sessionId === undefined) return undefined;
-  return sessions.get(sessionId);
+  for (const s of sessions.values()) {
+    if (s.user1 === userId || s.user2 === userId || s.spectators.includes(userId)) return s;
+  }
+  return undefined;
 }
 
 export function isPlayer(session: GameSession, userId: UserId): boolean {
@@ -182,11 +172,6 @@ export function restartWithPlayers(
   const allPrev = [s.user1, s.user2, ...s.spectators].filter((id): id is UserId => id !== null);
   const newSpectators = allPrev.filter(id => id !== newUser1 && id !== newUser2);
 
-  for (const id of allPrev) participantToSession.delete(id);
-  participantToSession.set(newUser1, s.id);
-  participantToSession.set(newUser2, s.id);
-  for (const id of newSpectators) participantToSession.set(id, s.id);
-
   s.user1 = newUser1;
   s.user2 = newUser2;
   s.spectators = newSpectators;
@@ -211,15 +196,12 @@ export function restartWithPlayers(
 }
 
 export function removePlayer(s: GameSession, userId: UserId): void {
-  diagUserUnmapped(userId, s.id);
-  participantToSession.delete(userId);
   if (s.user1 === userId) s.user1 = null;
   else if (s.user2 === userId) s.user2 = null;
   persistSessions();
 }
 
 export function removeSpectator(s: GameSession, userId: UserId): void {
-  participantToSession.delete(userId);
   s.spectators = s.spectators.filter(id => id !== userId);
   persistSessions();
 }
@@ -227,9 +209,6 @@ export function removeSpectator(s: GameSession, userId: UserId): void {
 export function endSession(session: GameSession): void {
   clearTimeout(session.timeoutHandle);
   diagSessionEnded(session.id, 'explicit');
-  if (session.user1 != null) { participantToSession.delete(session.user1); diagUserUnmapped(session.user1, session.id); }
-  if (session.user2 != null) { participantToSession.delete(session.user2); diagUserUnmapped(session.user2, session.id); }
-  for (const id of session.spectators) participantToSession.delete(id);
   sessions.delete(session.id);
   persistSessions();
 }

@@ -46,6 +46,10 @@ export class ImitationClient {
     this.send({ type: 'bootstrap', sessionToken });
   }
 
+  link(linkToken: string): void {
+    this.send({ type: 'link', linkToken });
+  }
+
   setMessageHandler(handler: MessageHandler): void {
     this.onMessage = handler;
   }

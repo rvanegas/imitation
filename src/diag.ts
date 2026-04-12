@@ -29,13 +29,6 @@ export function diagSessionEnded(sessionId: string, reason: 'explicit' | 'timeou
   write(`SESSION_ENDED session=${sessionId} reason=${reason}`);
 }
 
-export function diagUserMapped(userId: number, sessionId: string): void {
-  write(`USER_MAPPED user=${userId} session=${sessionId}`);
-}
-
-export function diagUserUnmapped(userId: number, sessionId: string): void {
-  write(`USER_UNMAPPED user=${userId} session=${sessionId}`);
-}
 
 export function diagNoSession(userId: number, context: string): void {
   write(`NO_SESSION user=${userId} context=${context}`);
