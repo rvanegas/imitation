@@ -4,7 +4,7 @@ diagProcessStart();
 const [,, cmd, ...args] = process.argv;
 
 function usage(): never {
-  console.error('Usage: npm run dev <server [--no-telegram|-t] | terminal <name> | costs [--by-session|-s]>');
+  console.error('Usage: npm run dev <server [--no-telegram|-t] | terminal <name> | costs [--by-session|-s] | sessions>');
   process.exit(1);
 }
 
@@ -33,6 +33,11 @@ switch (cmd) {
     } else {
       costs.showSummary();
     }
+    break;
+  }
+  case 'sessions': {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require('./sessions').showSessions();
     break;
   }
   default:

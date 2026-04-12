@@ -2,7 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { Transport } from './transport';
 import { UserId } from './types';
 import { getName, getOrAssignName, createAnonymousUser, setWsToken, getUserIdByWsToken } from './userProfiles';
-import { hasPendingInvite } from './session';
+import { isValidSessionToken } from './session';
 
 export class WebSocketTransport implements Transport {
   private sockets = new Map<UserId, WebSocket>();
@@ -55,7 +55,7 @@ export function startWebSocketServer(
             ws.send(JSON.stringify({ type: 'error', text: 'sessionToken required.' }));
             return;
           }
-          if (!hasPendingInvite(sessionToken)) {
+          if (!isValidSessionToken(sessionToken)) {
             ws.send(JSON.stringify({ type: 'error', text: 'Invalid or expired session token.' }));
             return;
           }

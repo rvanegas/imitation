@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { ImitationClient, ServerMessage } from './src/ws';
-import { getToken, saveToken } from './src/store';
+import { getToken, saveToken, clearToken } from './src/store';
 import LoginScreen from './src/screens/LoginScreen';
 import GameScreen, { ChatMessage } from './src/screens/GameScreen';
 
@@ -31,7 +31,17 @@ export default function App() {
     const token = await getToken();
     if (!token) { setScreen('login'); return; }
 
-    const c = makeClient((msg) => handleServerMessage(msg, c));
+    let authed = false;
+    const c = makeClient((msg) => {
+      if (msg.type === 'error' && !authed) {
+        c.disconnect();
+        clearToken();
+        setScreen('login');
+        return;
+      }
+      if (msg.type === 'ready') authed = true;
+      handleServerMessage(msg, c);
+    });
     c.connect(() => c.login(token));
   }
 
@@ -49,6 +59,7 @@ export default function App() {
   }
 
   function handleAuthenticated(c: ImitationClient, name: string) {
+    c.setMessageHandler((msg) => handleServerMessage(msg, c));
     setClient(c);
     setPlayerName(name);
     setMessages([]);

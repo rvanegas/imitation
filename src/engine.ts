@@ -111,15 +111,19 @@ export async function handleJoin(
     return;
   }
 
-  const existing = session.getSessionForUser(userId);
+  const existing = session.getSessionForParticipant(userId);
   if (existing) {
-    const partner = session.getPartner(existing, userId);
     const name = getName(userId) ?? 'A player';
-    const others = [partner, ...existing.spectators].filter((id): id is UserId => id !== null);
-    session.removePlayer(existing, userId);
-    await Promise.all(others.map(id =>
-      transport.send(id, `${name} left to join another game.`)
-    ));
+    if (existing.user1 === userId || existing.user2 === userId) {
+      const partner = session.getPartner(existing, userId);
+      const others = [partner, ...existing.spectators].filter((id): id is UserId => id !== null);
+      session.removePlayer(existing, userId);
+      await Promise.all(others.map(id =>
+        transport.send(id, `${name} left to join another game.`)
+      ));
+    } else {
+      session.removeSpectator(existing, userId);
+    }
   }
 
   const joined = session.acceptInvite(sessionToken, userId);
@@ -153,13 +157,14 @@ export async function handleJoin(
     return;
   }
 
-  const isPlayer = !!session.getSessionForUser(userId);
-  await transport.send(userId, isPlayer ? 'You are already a player in this game.' : 'Invalid or expired invite.');
+  const isParticipant = !!session.getSessionForParticipant(userId);
+  await transport.send(userId, isParticipant ? 'You are already in this session.' : 'Invalid or expired invite.');
 }
 
 export async function handleHelp(userId: UserId, transport: Transport): Promise<void> {
   await transport.send(userId, HELP_TEXT);
 }
+
 
 export async function handleSetName(userId: UserId, name: string, transport: Transport): Promise<void> {
   if (!isValidName(name)) {
@@ -179,7 +184,7 @@ export async function handleSetName(userId: UserId, name: string, transport: Tra
 }
 
 export async function handleInvite(userId: UserId, transport: Transport): Promise<void> {
-  const s = session.getSessionForUser(userId);
+  const s = session.getSessionForParticipant(userId);
   if (!s) {
     await transport.send(userId, 'No active session.');
     return;
@@ -189,7 +194,7 @@ export async function handleInvite(userId: UserId, transport: Transport): Promis
 }
 
 export async function handleStatus(userId: UserId, transport: Transport): Promise<void> {
-  const s = session.getSessionForUser(userId) ?? session.getSessionForSpectator(userId);
+  const s = session.getSessionForParticipant(userId);
   if (!s) {
     await transport.send(userId, 'No active session.');
     return;
@@ -272,7 +277,7 @@ export async function handleRestart(
   name2: string,
   transport: Transport,
 ): Promise<void> {
-  const s = session.getSessionForUser(userId) ?? session.getSessionForSpectator(userId);
+  const s = session.getSessionForParticipant(userId);
   if (!s) {
     await transport.send(userId, 'No active session.');
     return;
@@ -309,47 +314,42 @@ export async function handleRestart(
 }
 
 export async function handleLeave(userId: UserId, transport: Transport): Promise<void> {
-  const s = session.getSessionForSpectator(userId);
-  if (s) {
-    s.spectators = s.spectators.filter(id => id !== userId);
-    session.persistSessions();
-    await transport.send(userId, 'You have left the session.');
-    const name = getName(userId) ?? 'A spectator';
+  const s = session.getSessionForParticipant(userId);
+  if (!s) {
+    await transport.send(userId, 'No active session.');
+    return;
+  }
+
+  const name = getName(userId) ?? 'Someone';
+  await transport.send(userId, 'You have left the session.');
+
+  if (session.isPlayer(s, userId)) {
+    const partner = session.getPartner(s, userId);
+    const others = [partner, ...s.spectators].filter((id): id is UserId => id !== null);
+    session.removePlayer(s, userId);
+    await Promise.all(others.map(id => transport.send(id, `${name} left the session.`)));
+  } else {
+    session.removeSpectator(s, userId);
     const spectatorCount = s.spectators.length;
     await Promise.all([s.user1, s.user2].filter((id): id is UserId => id !== null).map(id =>
       transport.send(id, `${name} left. Spectators watching: ${spectatorCount}`)
     ));
-    if (s.user1 === null && s.user2 === null && s.spectators.length === 0) {
-      logSession(s);
-      session.endSession(s);
-    }
-    return;
   }
 
-  const ps = session.getSessionForUser(userId);
-  if (!ps) {
-    await transport.send(userId, 'No active session.');
-    return;
-  }
-
-  const name = getName(userId) ?? 'A player';
-  const partner = session.getPartner(ps, userId);
-  const others = [partner, ...ps.spectators].filter((id): id is UserId => id !== null);
-  session.removePlayer(ps, userId);
-  await transport.send(userId, 'You have left the session.');
-  await Promise.all(others.map(id =>
-    transport.send(id, `${name} left the session.`)
-  ));
-  if (ps.user1 === null && ps.user2 === null && ps.spectators.length === 0) {
-    logSession(ps);
-    session.endSession(ps);
+  if (s.user1 === null && s.user2 === null && s.spectators.length === 0) {
+    logSession(s);
+    session.endSession(s);
   }
 }
 
 export async function handleHuman(userId: UserId, guess: string, transport: Transport): Promise<void> {
-  const s = session.getSessionForUser(userId);
+  const s = session.getSessionForParticipant(userId);
   if (!s) {
     await transport.send(userId, 'No active session.');
+    return;
+  }
+  if (!session.isPlayer(s, userId)) {
+    await transport.send(userId, 'You are watching as a spectator.');
     return;
   }
   session.touchSession(s);
@@ -466,10 +466,14 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
 }
 
 export async function handleMessage(userId: UserId, text: string, transport: Transport): Promise<void> {
-  const s = session.getSessionForUser(userId);
+  const s = session.getSessionForParticipant(userId);
   if (!s) {
     diagNoSession(userId, 'handleMessage');
     await transport.send(userId, 'Use /start to create an invite.');
+    return;
+  }
+  if (!session.isPlayer(s, userId)) {
+    await transport.send(userId, 'You are watching as a spectator.');
     return;
   }
   session.touchSession(s);

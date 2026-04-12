@@ -34,7 +34,7 @@ interface Config {
   anthropic?: { api_key?: string; model?: string };
   ollama?:    { model?: string; base_url?: string };
   socket?:    { path?: string };
-  websocket?: { port?: number };
+  websocket?: { url?: string };
   pricing?:   Record<string, PricingEntry>;
 }
 
@@ -55,7 +55,8 @@ export const ANTHROPIC_MODEL = raw.anthropic?.model     ?? 'claude-sonnet-4-6';
 export const OLLAMA_MODEL    = raw.ollama?.model        ?? 'llama3.2';
 export const OLLAMA_BASE_URL = raw.ollama?.base_url     ?? 'http://localhost:11434/v1';
 export const SOCKET_PATH     = raw.socket?.path         || path.join(RUNTIME_DIR, 'imitation.sock');
-export const WS_PORT         = raw.websocket?.port      ?? 8080;
+const wsUrl = raw.websocket?.url ?? null;
+export const WS_PORT = wsUrl ? (parseInt(new URL(wsUrl).port) || 8080) : 8080;
 
 // Per-model pricing table. Keys are model IDs as recorded in cost-audit.jsonl.
 export const PRICING: Record<string, { inputPerMillion: number; outputPerMillion: number; cacheWritePerMillion: number; cacheReadPerMillion: number }> = {};

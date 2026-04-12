@@ -19,6 +19,9 @@ base_url = "http://localhost:11434/v1"
 # Defaults to $XDG_RUNTIME_DIR/imitation/imitation.sock (or /tmp/imitation/imitation.sock)
 # path = "/custom/path/to/imitation.sock"
 
+[websocket]
+# url = "ws://your-server-address:8080"
+
 # USD per million tokens, keyed by model ID — verify at https://anthropic.com/pricing
 [pricing."claude-sonnet-4-6"]
 input_per_million        = 3.00

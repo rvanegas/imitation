@@ -1,7 +1,10 @@
 // WebSocket client for the imitation server.
 // All messages are JSON frames (no newline framing needed over WebSocket).
 
-export const SERVER_URL = 'ws://192.168.7.150:8080'; // update to your server's address
+import Constants from 'expo-constants';
+export const SERVER_URL: string =
+  (Constants.expoConfig?.extra?.serverUrl as string | undefined) ?? 'ws://localhost:8080';
+// export const SERVER_URL = 'ws://192.168.7.150:8080'; // update to your server's address
 
 export type ServerMessage =
   | { type: 'ready';      name: string; token?: string }
@@ -41,6 +44,10 @@ export class ImitationClient {
 
   bootstrap(sessionToken: string): void {
     this.send({ type: 'bootstrap', sessionToken });
+  }
+
+  setMessageHandler(handler: MessageHandler): void {
+    this.onMessage = handler;
   }
 
   login(token: string): void {

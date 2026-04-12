@@ -169,7 +169,7 @@ export function getOrAssignName(userId: UserId): string {
   const counter = store.counter + 1;
   store.counter = counter;
   const name = `user${counter}`;
-  store.users[key] = { ...store.users[key], messages: store.users[key]?.messages ?? [], name };
+  store.users[key] = { ...store.users[key], messages: store.users[key]?.messages ?? [], name, lastSession: new Date().toISOString() };
   saveStore(store);
   return name;
 }
