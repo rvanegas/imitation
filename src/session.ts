@@ -83,6 +83,8 @@ export function createInvite(userId: UserId, variation: 'symmetric' | 'original'
     pendingSystemPrompt: null,
     scores: { user1: 0, user2: 0 },
     teamScores: { humans: 0, model: 0 },
+    winStreak: 0,
+    longestWinStreak: 0,
     currentRoundTurns: 0,
     totalTurns: 0,
     roundCount: 0,
@@ -187,6 +189,8 @@ export function restartWithPlayers(
   s.pendingSystemPrompt = null;
   s.scores = { user1: 0, user2: 0 };
   s.teamScores = { humans: 0, model: 0 };
+  s.winStreak = 0;
+  s.longestWinStreak = 0;
   s.currentRoundTurns = 0;
   s.totalTurns = 0;
   s.roundCount = 0;

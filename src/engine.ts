@@ -59,6 +59,22 @@ function getDeltas(s: GameSession & { user1: UserId; user2: UserId }) {
   };
 }
 
+// Human score = h/total * 2 - 1  (ranges –1 to +1; 0 = random chance)
+// Model score = 1 – (m/total * 2 – 1) = 2h/total  (0 when humans perfect; 1 when even)
+// Human score = h/total * 2 - 1  (ranges –1 to +1; 0 = random chance)
+// Model score = 1 – (m/total * 2 – 1) = 2h/total  (0 when humans perfect; 1 when even)
+function formatOriginalScores(s: GameSession): string {
+  const h = s.teamScores.humans;
+  const m = s.teamScores.model;
+  const total = h + m;
+  if (total === 0) return 'No rounds yet';
+  const humanScore = Math.round(h / total * 200 - 100);
+  const modelScore = Math.round(m / total * 200);
+  const streak = s.winStreak ?? 0;
+  const longest = s.longestWinStreak ?? 0;
+  return `Humans: ${h} (${humanScore}%) | Model: ${m} (${modelScore}%) | Streak: ${streak} (best: ${longest})`;
+}
+
 function stripEmoji(text: string): string {
   return text.replace(/\p{Extended_Pictographic}/gu, '').replace(/\s{2,}/g, ' ').trim();
 }
@@ -275,7 +291,7 @@ export async function handleStatus(userId: UserId, transport: Transport): Promis
 
   let scoreLine: string;
   if (s.variation === 'original') {
-    scoreLine = `Score — Humans: ${s.teamScores.humans} | Model: ${s.teamScores.model}`;
+    scoreLine = `Score — ${formatOriginalScores(s)}`;
   } else if (isSpectator) {
     scoreLine = `Score — ${name1}: ${s.scores.user1} | ${name2}: ${s.scores.user2}`;
   } else {
@@ -407,12 +423,19 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
   const guesserLabel = getName(userId)!;
 
   if (s.variation === 'original') {
-    if (correct) s.teamScores.humans += 1; else s.teamScores.model += 1;
+    if (correct) {
+      s.teamScores.humans += 1;
+      s.winStreak = (s.winStreak ?? 0) + 1;
+      if (s.winStreak > (s.longestWinStreak ?? 0)) s.longestWinStreak = s.winStreak;
+    } else {
+      s.teamScores.model += 1;
+      s.winStreak = 0;
+    }
     s.totalTurns += s.currentRoundTurns;
     s.roundCount += 1;
-    const verdict = correct ? 'Correct! Humans +1' : 'Wrong! Model +1';
+    const verdict = correct ? 'Correct! Humans point' : 'Wrong! Model point';
     const avgTurns = s.roundCount > 0 ? (s.totalTurns / s.roundCount).toFixed(1) : '—';
-    const scoreStr = `Humans: ${s.teamScores.humans} | Model: ${s.teamScores.model} | Avg turns to guess: ${avgTurns}`;
+    const scoreStr = `${formatOriginalScores(s)} | Avg turns: ${avgTurns}`;
 
     s.transcript.push({ role: 'guess', content: `${g} (${reveal})`, correct, guesser: role as 'user1' | 'user2' });
     saveState(s);
