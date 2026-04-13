@@ -1,8 +1,5 @@
 
-- iOS
 - test harness
-- remove emoji
-- spectator persists across session.
+- filter private information or the news
+- indicate whose turn and whether other it typing
 
-- confirm that one can be in only one session at a time.
-- remove /stop

@@ -52,6 +52,7 @@ export const BOT_TOKEN       = raw.bot_token            ?? '';
 export const MODEL_PROVIDER  = raw.model_provider       ?? 'anthropic';
 export const ANTHROPIC_API_KEY = raw.anthropic?.api_key ?? '';
 export const ANTHROPIC_MODEL = raw.anthropic?.model     ?? 'claude-sonnet-4-6';
+export const FAIRNESS_MODEL  = 'claude-haiku-4-5-20251001';
 export const OLLAMA_MODEL    = raw.ollama?.model        ?? 'llama3.2';
 export const OLLAMA_BASE_URL = raw.ollama?.base_url     ?? 'http://localhost:11434/v1';
 export const SOCKET_PATH     = raw.socket?.path         || path.join(RUNTIME_DIR, 'imitation.sock');

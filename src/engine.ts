@@ -1,7 +1,7 @@
 import { GameSession, UserId } from './types';
 import { Transport } from './transport';
 import * as session from './session';
-import { generatePrediction, generateAssessment, buildCachedBlock } from './imitation';
+import { generatePrediction, generateAssessment, buildCachedBlock, checkMessageFairness } from './imitation';
 import {
   getProfile, appendMessage, getName, getOrAssignName, setName,
   isValidName, getUserIdByName, appendAssessment, getAssessmentsWithMeta, touchUserSession,
@@ -517,6 +517,12 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
         await transport.send(userId, 'Waiting for your partner to respond.');
         return;
       }
+      const witnessFairnessCheck = await checkMessageFairness(stripped, s.id);
+      if (!witnessFairnessCheck.fair) {
+        await transport.send(userId,
+          `That message can't be used — ${witnessFairnessCheck.reason} The AI has no way to imitate it. Please try a different answer.`);
+        return;
+      }
       const prediction = stripEmoji(s.pendingPrediction!);
       const witnessRole = witnessId === s.user1 ? 'user1' : 'user2';
 
@@ -539,6 +545,12 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
 
     if (userId !== s.interrogator) {
       await transport.send(userId, 'Waiting for your partner to ask a question.');
+      return;
+    }
+    const interrogatorFairnessCheck = await checkMessageFairness(stripped, s.id);
+    if (!interrogatorFairnessCheck.fair) {
+      await transport.send(userId,
+        `That message can't be used — ${interrogatorFairnessCheck.reason} The AI has no way to answer it fairly. Please try a different question.`);
       return;
     }
     const witnessRole = witnessId === s.user1 ? 'user1' : 'user2';
@@ -586,6 +598,13 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
   // Symmetric variation
   if (s.pendingResponder !== null && s.pendingResponder !== userId) {
     await transport.send(userId, 'Waiting for your partner to respond.');
+    return;
+  }
+
+  const symmetricFairnessCheck = await checkMessageFairness(stripped, s.id);
+  if (!symmetricFairnessCheck.fair) {
+    await transport.send(userId,
+      `That message can't be used — ${symmetricFairnessCheck.reason} The AI has no way to respond to it fairly. Please try a different message.`);
     return;
   }
 

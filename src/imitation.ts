@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { TranscriptEntry, UserId, SystemPromptBlock } from './types';
-import { ANTHROPIC_API_KEY, ANTHROPIC_MODEL, OLLAMA_BASE_URL, OLLAMA_MODEL, MODEL_PROVIDER } from './config';
+import { ANTHROPIC_API_KEY, ANTHROPIC_MODEL, FAIRNESS_MODEL, OLLAMA_BASE_URL, OLLAMA_MODEL, MODEL_PROVIDER } from './config';
 import { appendCostAudit } from './costAudit';
 
 const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
@@ -347,4 +347,52 @@ export async function generateAssessment(
   const block = response.content[0];
   if (block.type !== 'text') throw new Error('Unexpected response type from Claude');
   return block.text.trim();
+}
+
+const FAIRNESS_SYSTEM_PROMPT =
+  `You are a fairness referee for an imitation game (Turing Test). Identify messages that exploit AI blindspots, making the game impossible rather than merely difficult.
+
+A message is UNFAIR only if it clearly relies on:
+
+1. PRIVATE INFORMATION: Anything about the sender's recent personal life that an AI couldn't know — shared experiences, recent activities, or near-future plans. Examples: "remember what you told me at the party?", "what did you have for lunch?", "what movie did you watch last night?", "what are you doing this weekend?", "did you see Alex's post about that thing?"
+
+2. POST-CUTOFF EVENTS: Specific real-world events that occurred after August 2025 where a correct answer would require knowing what actually happened. General questions ("what do you think of the economy?") are FAIR — only questions about specific verifiable post-cutoff events are unfair.
+
+When in doubt, rule FAIR. Only flag messages where the unfairness is clear and specific.
+
+Respond with valid JSON only: {"fair": true} or {"fair": false, "reason": "one sentence explaining the specific blindspot"}`;
+
+export async function checkMessageFairness(
+  message: string,
+  sessionId?: string,
+): Promise<{ fair: boolean; reason: string }> {
+  if (useOllama()) return { fair: true, reason: '' };
+
+  try {
+    const response = await client.messages.create({
+      model: FAIRNESS_MODEL,
+      max_tokens: 100,
+      system: FAIRNESS_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: `Message: "${message}"` }],
+    });
+
+    appendCostAudit({
+      timestamp: new Date().toISOString(),
+      operation: 'fairness',
+      sessionId,
+      provider: 'anthropic',
+      model: FAIRNESS_MODEL,
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
+    });
+
+    const block = response.content.find(b => b.type === 'text');
+    if (!block || block.type !== 'text') return { fair: true, reason: '' };
+
+    const parsed = JSON.parse(block.text.trim()) as { fair: boolean; reason?: string };
+    return { fair: parsed.fair, reason: parsed.reason ?? '' };
+  } catch {
+    // Fail open: never let a filter error block gameplay
+    return { fair: true, reason: '' };
+  }
 }
