@@ -501,7 +501,7 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
     return;
   }
 
-  if (/^human[/\s]*[ab]\b/i.test(text.trim())) {
+  if (/^human[/\s]*(\w+\s+)*[ab]\b/i.test(text.trim()) || /^[ab]$/i.test(text.trim())) {
     await transport.send(userId, 'Looks like you meant to guess. Use /human A or /human B.');
     return;
   }
