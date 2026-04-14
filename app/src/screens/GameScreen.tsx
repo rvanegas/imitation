@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, memo } from 'react';
 import {
   View, Text, TextInput, Button, Pressable, FlatList,
-  StyleSheet, KeyboardAvoidingView, Platform,
+  StyleSheet, KeyboardAvoidingView, Platform, Share,
 } from 'react-native';
 import { ImitationClient } from '../ws';
 
@@ -19,11 +19,32 @@ interface Props {
   onSignOut: () => void;
 }
 
-const Bubble = memo(({ item }: { item: ChatMessage }) => (
-  <View style={[styles.bubble, item.incoming ? styles.incoming : styles.outgoing]}>
-    <Text style={[styles.bubbleText, !item.incoming && styles.bubbleTextOut]}>{item.text}</Text>
-  </View>
-));
+function extractInviteUrl(text: string): string | null {
+  const match = text.match(/imitation:\/\/join\/\d+/);
+  return match?.[0] ?? null;
+}
+
+const Bubble = memo(({ item }: { item: ChatMessage }) => {
+  const inviteUrl = item.incoming ? extractInviteUrl(item.text) : null;
+
+  return (
+    <View>
+      <View style={[styles.bubble, item.incoming ? styles.incoming : styles.outgoing]}>
+        <Text style={[styles.bubbleText, !item.incoming && styles.bubbleTextOut]}>{item.text}</Text>
+      </View>
+      {inviteUrl && (
+        <Pressable
+          style={styles.shareButton}
+          onPress={() => Share.share(
+            Platform.OS === 'ios' ? { url: inviteUrl } : { message: inviteUrl }
+          )}
+        >
+          <Text style={styles.shareText}>Share invite</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+});
 
 export default function GameScreen({ client, name, messages, onSend, onSignOut }: Props) {
   const [input, setInput] = useState('');
@@ -87,4 +108,6 @@ const styles = StyleSheet.create({
   bubbleTextOut:  { color: '#fff' },
   inputRow:       { flexDirection: 'row', padding: 8, gap: 8, alignItems: 'center' },
   input:          { flex: 1, borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 10, fontSize: 16 },
+  shareButton:    { alignSelf: 'flex-start', marginTop: 2, marginBottom: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: '#007aff' },
+  shareText:      { color: '#fff', fontSize: 13, fontWeight: '500' },
 });

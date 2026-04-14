@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { ActivityIndicator, View, Linking } from 'react-native';
 import { ImitationClient, ServerMessage } from './src/ws';
 import { getToken, saveToken, clearToken } from './src/store';
 import LoginScreen from './src/screens/LoginScreen';
@@ -10,14 +10,40 @@ type Screen = 'loading' | 'login' | 'game';
 let msgCounter = 0;
 function nextId(): string { return String(++msgCounter); }
 
+function parseInviteToken(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const match = url.match(/^imitation:\/\/join\/(\d+)$/);
+  return match?.[1] ?? null;
+}
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>('loading');
   const [client, setClient] = useState<ImitationClient | null>(null);
   const [playerName, setPlayerName] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
+  // Refs so URL-event callbacks always see the latest screen and client.
+  const screenRef = useRef<Screen>('loading');
+  const clientRef = useRef<ImitationClient | null>(null);
+  screenRef.current = screen;
+  clientRef.current = client;
+
   useEffect(() => {
-    tryAutoLogin();
+    // While the app is already running, handle incoming deep links.
+    const sub = Linking.addEventListener('url', ({ url }) => {
+      const token = parseInviteToken(url);
+      if (!token) return;
+      if (screenRef.current === 'game' && clientRef.current) {
+        clientRef.current.cmd(`/start ${token}`);
+      }
+    });
+
+    // Cold-start: check if the app was opened from a deep link.
+    Linking.getInitialURL().then(url => {
+      tryAutoLogin(parseInviteToken(url) ?? undefined);
+    });
+
+    return () => sub.remove();
   }, []);
 
   function makeClient(onMsg: (msg: ServerMessage) => void): ImitationClient {
@@ -27,9 +53,28 @@ export default function App() {
     });
   }
 
-  async function tryAutoLogin() {
-    const token = await getToken();
-    if (!token) { setScreen('login'); return; }
+  async function tryAutoLogin(inviteToken?: string) {
+    const storedToken = await getToken();
+
+    if (!storedToken) {
+      if (inviteToken) {
+        // New user opening via deep link: bootstrap directly into the game.
+        let authed = false;
+        const c = makeClient((msg) => {
+          if (msg.type === 'error' && !authed) {
+            c.disconnect();
+            setScreen('login');
+            return;
+          }
+          if (msg.type === 'ready') authed = true;
+          handleServerMessage(msg, c);
+        });
+        c.connect(() => c.bootstrap(inviteToken));
+      } else {
+        setScreen('login');
+      }
+      return;
+    }
 
     let authed = false;
     const c = makeClient((msg) => {
@@ -39,10 +84,13 @@ export default function App() {
         setScreen('login');
         return;
       }
-      if (msg.type === 'ready') authed = true;
+      if (msg.type === 'ready') {
+        authed = true;
+        if (inviteToken) c.cmd(`/start ${inviteToken}`);
+      }
       handleServerMessage(msg, c);
     });
-    c.connect(() => c.login(token));
+    c.connect(() => c.login(storedToken));
   }
 
   function handleServerMessage(msg: ServerMessage, c: ImitationClient) {

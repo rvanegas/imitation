@@ -11,7 +11,6 @@ class CombinedTransport implements Transport {
   private sockets = new Map<UserId, net.Socket>();
   private wsTransport: WebSocketTransport;
   private telegramSend: ((userId: UserId, text: string) => Promise<void>) | null = null;
-  private botUsername = '';
 
   constructor(wsTransport: WebSocketTransport) {
     this.wsTransport = wsTransport;
@@ -19,10 +18,6 @@ class CombinedTransport implements Transport {
 
   setTelegramSend(fn: (userId: UserId, text: string) => Promise<void>): void {
     this.telegramSend = fn;
-  }
-
-  setBotUsername(name: string): void {
-    this.botUsername = name;
   }
 
   register(userId: UserId, socket: net.Socket): void {
@@ -48,8 +43,10 @@ class CombinedTransport implements Transport {
     }
   }
 
-  makeInviteLink(token: string): string {
-    if (this.botUsername) return `https://t.me/${this.botUsername}?start=${token}`;
+  makeInviteLink(token: string, userId?: UserId): string {
+    if (userId !== undefined && this.wsTransport.has(userId)) {
+      return this.wsTransport.makeInviteLink(token);
+    }
     return token;
   }
 }
@@ -65,7 +62,7 @@ export function start(telegram: boolean): void {
   if (telegram) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { setupTelegram } = require('./bot');
-    bot = setupTelegram(transport, (name: string) => transport.setBotUsername(name));
+    bot = setupTelegram(transport);
     transport.setTelegramSend(async (userId, text) => {
       const chatId = getTelegramId(userId);
       if (chatId !== undefined) await bot.telegram.sendMessage(chatId, text);
@@ -99,6 +96,7 @@ export function start(telegram: boolean): void {
         case 'human':   await engine.handleHuman(userId, args[0] ?? '', transport); break;
         case 'a':       await engine.handleHuman(userId, 'A', transport); break;
         case 'b':       await engine.handleHuman(userId, 'B', transport); break;
+        case 'reflection': await engine.handleReflection(userId, transport); break;
         case 'invite':  await engine.handleInvite(userId, transport); break;
         case 'status':  await engine.handleStatus(userId, transport); break;
         case 'leave':   await engine.handleLeave(userId, transport); break;

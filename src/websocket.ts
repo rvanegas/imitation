@@ -29,7 +29,7 @@ export class WebSocketTransport implements Transport {
   }
 
   makeInviteLink(token: string): string {
-    return token;
+    return `imitation://join/${token}`;
   }
 }
 

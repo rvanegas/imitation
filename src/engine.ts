@@ -4,7 +4,8 @@ import * as session from './session';
 import { generatePrediction, generateAssessment, buildCachedBlock, checkMessageFairness } from './imitation';
 import {
   getProfile, appendMessage, getName, getOrAssignName, setName,
-  isValidName, getUserIdByName, appendAssessment, getAssessmentsWithMeta, touchUserSession,
+  isValidName, getUserIdByName, appendAssessment, getAssessmentsWithMeta,
+  getLatestAssessmentForSession, touchUserSession,
 } from './userProfiles';
 import {
   deliverToSender, deliverToReceiver, deliverToSpectators,
@@ -75,6 +76,17 @@ function formatOriginalScores(s: GameSession): string {
   return `Humans: ${h} (${humanScore}%) | Model: ${m} (${modelScore}%) | Streak: ${streak} (best: ${longest})`;
 }
 
+function formatOriginalScoreStr(s: GameSession): string {
+  const avgTurns = s.roundCount > 0 ? (s.totalTurns / s.roundCount).toFixed(1) : '—';
+  return `${formatOriginalScores(s)} | Avg turns: ${avgTurns}`;
+}
+
+function formatSymmetricScoreStr(s: GameSession): string {
+  const name1 = s.user1 !== null ? (getName(s.user1) ?? 'User 1') : 'User 1';
+  const name2 = s.user2 !== null ? (getName(s.user2) ?? 'User 2') : 'User 2';
+  return `${name1}: ${s.scores.user1} | ${name2}: ${s.scores.user2}`;
+}
+
 function stripEmoji(text: string): string {
   return text.replace(/\p{Extended_Pictographic}/gu, '').replace(/\s{2,}/g, ' ').trim();
 }
@@ -97,6 +109,7 @@ export const HELP_TEXT =
   '/human A|B — Guess which message was written by the human\n' +
   '/invite — Get the session invite; first to join becomes player 2, others watch\n' +
   '/status — Show current turn, score, and spectator count\n' +
+  '/reflection — Show the AI\'s assessment of the most recent guess\n' +
   '/leave — Leave the current session\n' +
   '/restart <user1> <user2> — Restart the game with two players from the session\n' +
   '/setname <name> — Set your display name\n' +
@@ -127,7 +140,7 @@ export async function handleVariationSelect(
   }
 
   const sessionToken = session.createInvite(userId, variation);
-  const link = transport.makeInviteLink(sessionToken);
+  const link = transport.makeInviteLink(sessionToken, userId);
   const label = variation === 'original' ? 'Original Turing Test' : 'Symmetric';
   await transport.send(
     userId,
@@ -217,13 +230,27 @@ export async function handleSetName(userId: UserId, name: string, transport: Tra
   await transport.send(userId, `Name set to: ${name}`);
 }
 
+export async function handleReflection(userId: UserId, transport: Transport): Promise<void> {
+  const s = session.getSessionForParticipant(userId);
+  if (!s) {
+    await transport.send(userId, 'No active session.');
+    return;
+  }
+  const assessment = getLatestAssessmentForSession(s.id);
+  if (!assessment) {
+    await transport.send(userId, 'No reflection available yet — complete a round first.');
+    return;
+  }
+  await transport.send(userId, assessment);
+}
+
 export async function handleInvite(userId: UserId, transport: Transport): Promise<void> {
   const s = session.getSessionForParticipant(userId);
   if (!s) {
     await transport.send(userId, 'No active session.');
     return;
   }
-  const link = transport.makeInviteLink(s.id);
+  const link = transport.makeInviteLink(s.id, userId);
   await transport.send(userId, `Share this link — the first to join becomes player 2; everyone else watches as a spectator:\n${link}`);
 }
 
@@ -434,8 +461,7 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
     s.totalTurns += s.currentRoundTurns;
     s.roundCount += 1;
     const verdict = correct ? 'Correct! Humans point' : 'Wrong! Model point';
-    const avgTurns = s.roundCount > 0 ? (s.totalTurns / s.roundCount).toFixed(1) : '—';
-    const scoreStr = `${formatOriginalScores(s)} | Avg turns: ${avgTurns}`;
+    const scoreStr = formatOriginalScoreStr(s);
 
     s.transcript.push({ role: 'guess', content: `${g} (${reveal})`, correct, guesser: role as 'user1' | 'user2' });
     saveState(s);
@@ -454,7 +480,7 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
       }, witnessRole, s.cachedSystemPromptBlock!, deltaMessages, deltaAssessments, s.id).then(assessment => appendAssessment(assessment, meta)).catch(() => {});
     }
 
-    await deliverRoundResultToSpectators(transport, s, guesserLabel, correct, reveal, s.scores, s.teamScores);
+    await deliverRoundResultToSpectators(transport, s, guesserLabel, correct, reveal, scoreStr);
     session.reshuffle(s);
 
     const youAreNewInterrogator = s.interrogator === userId;
@@ -491,7 +517,7 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
       }, witnessRole, s.cachedSystemPromptBlock!, deltaMessages, deltaAssessments, s.id).then(assessment => appendAssessment(assessment, meta)).catch(() => {});
     }
 
-    await deliverRoundResultToSpectators(transport, s, guesserLabel, correct, reveal, s.scores);
+    await deliverRoundResultToSpectators(transport, s, guesserLabel, correct, reveal, formatSymmetricScoreStr(s));
     session.reshuffle(s);
 
     const youGoFirst = s.firstSender === userId;
@@ -537,7 +563,7 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
 
     if (s.pendingResponder === witnessId) {
       if (userId !== witnessId) {
-        await transport.send(userId, 'Waiting for your partner to respond.');
+        await transport.send(userId, 'Waiting for your partner to respond. (You can still use /status, /invite, /leave.)');
         return;
       }
       const witnessFairnessCheck = await checkMessageFairness(stripped, s.id);
@@ -567,7 +593,7 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
     }
 
     if (userId !== s.interrogator) {
-      await transport.send(userId, 'Waiting for your partner to ask a question.');
+      await transport.send(userId, 'Waiting for your partner to ask a question. (You can still use /status, /invite, /leave.)');
       return;
     }
     const interrogatorFairnessCheck = await checkMessageFairness(stripped, s.id);
@@ -620,7 +646,7 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
 
   // Symmetric variation
   if (s.pendingResponder !== null && s.pendingResponder !== userId) {
-    await transport.send(userId, 'Waiting for your partner to respond.');
+    await transport.send(userId, 'Waiting for your partner to respond. (You can still use /status, /invite, /leave.)');
     return;
   }
 

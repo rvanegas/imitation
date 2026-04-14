@@ -207,6 +207,15 @@ export function getAssessmentsWithMeta(): Array<{ text: string; imitateeId: User
   return loadStore().assessments.list.map(r => ({ text: r.text, imitateeId: r.imitateeId }));
 }
 
+// Returns the most recent assessment for a given session, or undefined if none.
+export function getLatestAssessmentForSession(sessionId: string): string | undefined {
+  const list = loadStore().assessments.list;
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i].sessionId === sessionId) return list[i].text;
+  }
+  return undefined;
+}
+
 export function setAssessments(list: string[]): void {
   const store = loadStore();
   // Compacted entries are general lessons (imitateeId=0).

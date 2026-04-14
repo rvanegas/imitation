@@ -59,14 +59,10 @@ export async function deliverRoundResultToSpectators(
   guesserLabel: string,
   correct: boolean,
   reveal: string,
-  scores: { user1: number; user2: number },
-  teamScores?: { humans: number; model: number },
+  scoreStr: string,
 ): Promise<void> {
   if (session.spectators.length === 0) return;
   const verdict = correct ? 'correctly' : 'incorrectly';
-  const scoreStr = teamScores
-    ? `Humans: ${teamScores.humans} | Model: ${teamScores.model}`
-    : `User 1: ${scores.user1} | User 2: ${scores.user2}`;
   const text =
     `${guesserLabel} guessed ${verdict}. ${reveal}\n` +
     `Score — ${scoreStr}\n\n` +
