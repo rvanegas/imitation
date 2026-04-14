@@ -57,8 +57,7 @@ Meta commands (not sent to the game):
   :help                   Show this help
 
 Game commands (issued as the active user):
-  /start symmetric        Create a Symmetric game and get an invite token
-  /start original         Create an Original Turing Test game
+  /start                  Create a Turing Test game and get an invite token
   /start <token>          Join a game (or watch as spectator) via invite token
   /human A|B              Submit a guess
   /invite                 Show the session invite token
@@ -117,17 +116,10 @@ Game commands (issued as the active user):
         switch (cmd) {
           case 'start': {
             const arg = args[0]?.toLowerCase();
-            if (arg === 'symmetric' || arg === 'original') {
-              await engine.handleVariationSelect(userId, arg, transport);
-            } else if (arg) {
-              await engine.handleJoin(userId, arg, transport);
+            if (!arg) {
+              await engine.handleStart(userId, transport);
             } else {
-              console.log(
-                'Usage:\n' +
-                '  /start symmetric   — create a Symmetric game\n' +
-                '  /start original    — create an Original Turing Test game\n' +
-                '  /start <token>     — join via invite token'
-              );
+              await engine.handleJoin(userId, arg, transport);
             }
             break;
           }

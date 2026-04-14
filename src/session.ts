@@ -65,23 +65,20 @@ export function loadPersistedSessions(): void {
   diagSessionsLoaded(loadedCount);
 }
 
-export function createInvite(userId: UserId, variation: 'symmetric' | 'original'): string {
+export function createInvite(userId: UserId): string {
   const sessionToken = generateSessionToken();
   const s: GameSession = {
     id: sessionToken,
     user1: userId,
     user2: null,
     status: 'active',
-    variation,
     imitationFirst: false,
     timeoutHandle: null as any,
     transcript: [],
-    pendingResponder: variation === 'original' ? null : userId,
-    firstSender: userId,
+    pendingResponder: null,
     interrogator: userId,
     pendingPrediction: null,
     pendingSystemPrompt: null,
-    scores: { user1: 0, user2: 0 },
     teamScores: { humans: 0, model: 0 },
     winStreak: 0,
     longestWinStreak: 0,
@@ -157,15 +154,10 @@ export function touchSession(s: GameSession): void {
 export function reshuffle(session: GameSession): void {
   if (session.user1 === null || session.user2 === null) return;
   session.imitationFirst = Math.random() < 0.5;
-  if (session.variation === 'original') {
-    session.interrogator = session.interrogator === session.user1 ? session.user2 : session.user1;
-    session.pendingResponder = null;
-    session.pendingPrediction = null;
-    session.currentRoundTurns = 0;
-  } else {
-    session.firstSender = session.firstSender === session.user1 ? session.user2 : session.user1;
-    session.pendingResponder = session.firstSender;
-  }
+  session.interrogator = session.interrogator === session.user1 ? session.user2 : session.user1;
+  session.pendingResponder = null;
+  session.pendingPrediction = null;
+  session.currentRoundTurns = 0;
   persistSessions();
 }
 
@@ -182,12 +174,10 @@ export function restartWithPlayers(
   s.spectators = newSpectators;
   s.imitationFirst = Math.random() < 0.5;
   s.transcript = [];
-  s.pendingResponder = s.variation === 'original' ? null : newUser1;
-  s.firstSender = newUser1;
+  s.pendingResponder = null;
   s.interrogator = newUser1;
   s.pendingPrediction = null;
   s.pendingSystemPrompt = null;
-  s.scores = { user1: 0, user2: 0 };
   s.teamScores = { humans: 0, model: 0 };
   s.winStreak = 0;
   s.longestWinStreak = 0;

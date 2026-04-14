@@ -19,18 +19,15 @@ export interface GameSession {
   user1: UserId | null;
   user2: UserId | null;
   status: 'active';
-  variation: 'symmetric' | 'original';
   imitationFirst: boolean;
   timeoutHandle: ReturnType<typeof setTimeout>;
   transcript: TranscriptEntry[];  // interleaved actual messages and model predictions
-  // symmetric: pending sender/guesser; original: null=interrogator's turn, witnessId=answer phase
+  // null=interrogator's turn, witnessId=answer phase
   pendingResponder: UserId | null;
-  firstSender: UserId;            // symmetric only: who sends first in a round
-  interrogator: UserId;           // original only: who is asking/guessing this round
-  pendingPrediction: string | null; // original only: AI prediction stored between question and answer
-  pendingSystemPrompt: string | null; // original only: system prompt paired with pendingPrediction
-  scores: { user1: number; user2: number };
-  teamScores: { humans: number; model: number };  // original variation only; raw point counts
+  interrogator: UserId;           // who is asking/guessing this round
+  pendingPrediction: string | null; // AI prediction stored between question and answer
+  pendingSystemPrompt: string | null; // system prompt paired with pendingPrediction
+  teamScores: { humans: number; model: number };  // raw point counts
   winStreak: number;                    // original: consecutive rounds won by humans
   longestWinStreak: number;             // original: longest such streak in this session
   currentRoundTurns: number;          // original: Q&A exchanges in the current round

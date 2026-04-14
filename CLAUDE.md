@@ -33,18 +33,14 @@ Unix socket defaults to `$XDG_RUNTIME_DIR/imitation/imitation.sock`.
 
 ## Architecture
 
-This is a game implementing the Imitation Game (Turing Test) in two variations. Two players chat, and after each message the AI generates what it predicts the sender would have written. The receiver sees two options (A and B, one human, one AI) and guesses which is human.
+This is a game implementing the Imitation Game (Turing Test). Two players chat in a Q&A format; after each exchange the AI generates what it predicts the witness would have written. The interrogator sees two options (A and B, one human, one AI) and guesses which is human.
 
-**Game variations:**
-- **Symmetric** — both players alternate sending and guessing
-- **Original Turing Test** — one player is the interrogator who asks questions and guesses; the other is the witness who answers
-
-**Game flow (symmetric):**
-1. Player A sends `/start symmetric` → gets an invite token
-2. Player B joins via token → game begins; Player A sends first
-3. Sender writes a message → `imitation.ts` generates a blind AI prediction
-4. `delivery.ts` sends both to the receiver (randomized A/B order)
-5. Receiver guesses with `/human A` or `/human B` (or `/a`/`/b`)
+**Game flow:**
+1. Player A sends `/start` → gets an invite token
+2. Player B joins via token → game begins; Player A is the interrogator
+3. Interrogator asks a question → `imitation.ts` generates a blind AI prediction of the witness's answer
+4. Witness answers → `delivery.ts` sends both to the interrogator (randomized A/B order)
+5. Interrogator guesses with `/human A` or `/human B` (or `/a`/`/b`)
 6. Score updates, roles alternate via `session.ts`
 
 **Key files:**
@@ -65,14 +61,11 @@ This is a game implementing the Imitation Game (Turing Test) in two variations. 
 - `src/userProfiles.ts` — **TODO:** remove `migrateFlat()` and its call in `loadStore()` once the new nested `user_profiles.json` format has been confirmed in production (auto-migration runs lazily on first server start after deploy)
 
 **Key state in `GameSession`:**
-- `variation` — `'symmetric'` or `'original'`
 - `imitationFirst` — randomized each round; determines whether A=AI/B=human or vice versa
-- `pendingResponder` — symmetric: whose turn to guess; original: `null`=interrogator's turn, `witnessId`=answer phase
-- `firstSender` — symmetric only: who sends first in a round
-- `interrogator` — original only: who is asking/guessing this round
-- `pendingPrediction` / `pendingSystemPrompt` — original only: stored between question and answer
-- `scores` — per-player scores (symmetric)
-- `teamScores` — humans vs. model scores (original)
+- `pendingResponder` — `null`=interrogator's turn, `witnessId`=answer phase
+- `interrogator` — who is asking/guessing this round
+- `pendingPrediction` / `pendingSystemPrompt` — stored between question and answer
+- `teamScores` — humans vs. model scores
 
 **Commands available in-game:**
 `/start`, `/human A|B`, `/a`, `/b`, `/invite`, `/status`, `/stop`, `/leave`, `/restart <u1> <u2>`, `/setname <name>`, `/help`

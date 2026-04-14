@@ -79,17 +79,10 @@ export function start(telegram: boolean): void {
       switch (cmd) {
         case 'start': {
           const arg = args[0]?.toLowerCase();
-          if (arg === 'symmetric' || arg === 'original') {
-            await engine.handleVariationSelect(userId, arg, transport);
-          } else if (arg) {
-            await engine.handleJoin(userId, arg, transport);
+          if (!arg) {
+            await engine.handleStart(userId, transport);
           } else {
-            await transport.send(userId,
-              'Usage:\n' +
-              '  /start symmetric  — create a Symmetric game\n' +
-              '  /start original   — create an Original Turing Test game\n' +
-              '  /start <token>    — join via invite token',
-            );
+            await engine.handleJoin(userId, arg, transport);
           }
           break;
         }

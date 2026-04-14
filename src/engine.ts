@@ -81,12 +81,6 @@ function formatOriginalScoreStr(s: GameSession): string {
   return `${formatOriginalScores(s)} | Avg turns: ${avgTurns}`;
 }
 
-function formatSymmetricScoreStr(s: GameSession): string {
-  const name1 = s.user1 !== null ? (getName(s.user1) ?? 'User 1') : 'User 1';
-  const name2 = s.user2 !== null ? (getName(s.user2) ?? 'User 2') : 'User 2';
-  return `${name1}: ${s.scores.user1} | ${name2}: ${s.scores.user2}`;
-}
-
 function stripEmoji(text: string): string {
   return text.replace(/\p{Extended_Pictographic}/gu, '').replace(/\s{2,}/g, ' ').trim();
 }
@@ -105,7 +99,7 @@ export function initSessions(transport: Transport): void {
 }
 
 export const HELP_TEXT =
-  '/start — Create a new Original Turing Test game (/start symmetric for the symmetric variation)\n' +
+  '/start — Create a new Turing Test game\n' +
   '/human A|B — Guess which message was written by the human\n' +
   '/invite — Get the session invite; first to join becomes player 2, others watch\n' +
   '/status — Show current turn, score, and spectator count\n' +
@@ -115,9 +109,8 @@ export const HELP_TEXT =
   '/setname <name> — Set your display name\n' +
   '/help — Show this message';
 
-export async function handleVariationSelect(
+export async function handleStart(
   userId: UserId,
-  variation: 'symmetric' | 'original',
   transport: Transport,
 ): Promise<void> {
   getOrAssignName(userId);
@@ -139,12 +132,11 @@ export async function handleVariationSelect(
     }
   }
 
-  const sessionToken = session.createInvite(userId, variation);
+  const sessionToken = session.createInvite(userId);
   const link = transport.makeInviteLink(sessionToken, userId);
-  const label = variation === 'original' ? 'Original Turing Test' : 'Symmetric';
   await transport.send(
     userId,
-    `${label} selected.\n\nShare this link — the first to join becomes player 2; everyone else watches:\n${link}`,
+    `Share this link — the first to join becomes player 2; everyone else watches:\n${link}`,
   );
 }
 
@@ -180,15 +172,9 @@ export async function handleJoin(
     touchUserSession(joined.user1!);
     initGameCache(joined as GameSession & { user1: UserId; user2: UserId });
     session.persistSessions();
-    if (joined.variation === 'original') {
-      await transport.send(joined.user2!, HELP_TEXT);
-      await transport.send(joined.user1!, 'Game started! You are the interrogator — ask your first question.');
-      await transport.send(joined.user2!, 'Game started! Your partner is the interrogator. Wait for their first question.');
-    } else {
-      await transport.send(joined.user2!, HELP_TEXT);
-      await transport.send(joined.user1!, 'Game started! You send the first message.');
-      await transport.send(joined.user2!, 'Game started! Your partner sends the first message.');
-    }
+    await transport.send(joined.user2!, HELP_TEXT);
+    await transport.send(joined.user1!, 'Game started! You are the interrogator — ask your first question.');
+    await transport.send(joined.user2!, 'Game started! Your partner is the interrogator. Wait for their first question.');
     return;
   }
 
@@ -278,54 +264,27 @@ export async function handleStatus(userId: UserId, transport: Transport): Promis
   const name1 = getName(s.user1) ?? 'user1';
   const name2 = getName(s.user2) ?? 'user2';
 
-  const interrogatorId = s.variation === 'original'
-    ? s.interrogator
-    : (s.firstSender === s.user1 ? s.user2 : s.user1);
+  const interrogatorId = s.interrogator;
   const interrogatorName = interrogatorId === s.user1 ? name1 : name2;
   const interrogatorLabel = isSpectator ? interrogatorName : (interrogatorId === userId ? 'you' : interrogatorName);
   const interrogatorLine = `Interrogator: ${interrogatorLabel}`;
 
   let turnLine: string;
   if (isSpectator) {
-    if (s.variation === 'original') {
-      const witnessName = s.pendingResponder !== null ? (s.pendingResponder === s.user1 ? name1 : name2) : null;
-      turnLine = witnessName !== null
-        ? `Waiting for ${witnessName} to answer.`
-        : `Waiting for ${interrogatorName} to ask a question.`;
-    } else {
-      const senderName = s.firstSender === s.user1 ? name1 : name2;
-      const pendingName = s.pendingResponder !== null ? (s.pendingResponder === s.user1 ? name1 : name2) : null;
-      turnLine = pendingName !== null
-        ? `Waiting for ${pendingName} to guess.`
-        : `Waiting for ${senderName} to send a message.`;
-    }
-  } else if (s.variation === 'original') {
+    const witnessName = s.pendingResponder !== null ? (s.pendingResponder === s.user1 ? name1 : name2) : null;
+    turnLine = witnessName !== null
+      ? `Waiting for ${witnessName} to answer.`
+      : `Waiting for ${interrogatorName} to ask a question.`;
+  } else {
     const isInterrogator = userId === s.interrogator;
     if (s.pendingResponder !== null) {
       turnLine = isInterrogator ? 'Waiting for your partner to answer.' : 'Your turn to answer.';
     } else {
       turnLine = isInterrogator ? 'Your turn to ask a question.' : `Waiting for ${interrogatorName} to ask a question.`;
     }
-  } else {
-    if (s.pendingResponder === null) {
-      turnLine = userId === s.firstSender ? 'Your turn to send a message.' : 'Waiting for your partner to send a message.';
-    } else {
-      turnLine = s.pendingResponder === userId
-        ? 'Your turn to guess (/human A or /human B).'
-        : 'Waiting for your partner to guess.';
-    }
   }
 
-  let scoreLine: string;
-  if (s.variation === 'original') {
-    scoreLine = `Score — ${formatOriginalScores(s)}`;
-  } else if (isSpectator) {
-    scoreLine = `Score — ${name1}: ${s.scores.user1} | ${name2}: ${s.scores.user2}`;
-  } else {
-    const myRole = userId === s.user1 ? 'user1' : 'user2';
-    const partnerRole = myRole === 'user1' ? 'user2' : 'user1';
-    scoreLine = `Score — You: ${s.scores[myRole]} | Partner: ${s.scores[partnerRole]}`;
-  }
+  const scoreLine = `Score — ${formatOriginalScores(s)}`;
 
   const playersLine = `Players: ${name1}, ${name2}`;
 
@@ -362,12 +321,8 @@ export async function handleRestart(
   initGameCache(s as GameSession & { user1: UserId; user2: UserId });
   session.persistSessions();
 
-  const msg1 = s.variation === 'original'
-    ? 'Game restarted! You are the interrogator — ask your first question.'
-    : 'Game restarted! You send the first message.';
-  const msg2 = s.variation === 'original'
-    ? 'Game restarted! Your partner is the interrogator. Wait for their first question.'
-    : 'Game restarted! Your partner sends the first message.';
+  const msg1 = 'Game restarted! You are the interrogator — ask your first question.';
+  const msg2 = 'Game restarted! Your partner is the interrogator. Wait for their first question.';
 
   await transport.send(s.user1!, msg1);
   await transport.send(s.user2!, msg2);
@@ -420,14 +375,9 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
     return;
   }
 
-  if (s.variation === 'original') {
-    const hasExchange = s.transcript.some(e => e.role === 'model');
-    if (userId !== s.interrogator || s.pendingResponder !== null || !hasExchange) {
-      await transport.send(userId, 'It is not your turn to guess, or no exchange has happened yet.');
-      return;
-    }
-  } else if (s.pendingResponder !== userId) {
-    await transport.send(userId, 'It is not your turn to guess, or no message to guess on.');
+  const hasExchange = s.transcript.some(e => e.role === 'model');
+  if (userId !== s.interrogator || s.pendingResponder !== null || !hasExchange) {
+    await transport.send(userId, 'It is not your turn to guess, or no exchange has happened yet.');
     return;
   }
 
@@ -449,87 +399,50 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
     : 'A was the human, B was the model.';
   const guesserLabel = getName(userId)!;
 
-  if (s.variation === 'original') {
-    if (correct) {
-      s.teamScores.humans += 1;
-      s.winStreak = (s.winStreak ?? 0) + 1;
-      if (s.winStreak > (s.longestWinStreak ?? 0)) s.longestWinStreak = s.winStreak;
-    } else {
-      s.teamScores.model += 1;
-      s.winStreak = 0;
-    }
-    s.totalTurns += s.currentRoundTurns;
-    s.roundCount += 1;
-    const verdict = correct ? 'Correct! Humans point' : 'Wrong! Model point';
-    const scoreStr = formatOriginalScoreStr(s);
-
-    s.transcript.push({ role: 'guess', content: `${g} (${reveal})`, correct, guesser: role as 'user1' | 'user2' });
-    saveState(s);
-
-    const modelEntry = s.transcript[s.transcript.length - 2];
-    const humanEntry = s.transcript[s.transcript.length - 3];
-    if (modelEntry?.role === 'model' && humanEntry) {
-      const imitateeId = humanEntry.role === 'user1' ? s.user1 : s.user2;
-      const witnessRole = humanEntry.role as 'user1' | 'user2';
-      const meta = { sessionId: s.id, guessNumber: s.transcript.filter(e => e.role === 'guess').length, guesserId: userId, imitateeId, correct };
-      ensureGameCache(s);
-      const { deltaMessages, deltaAssessments } = getDeltas(s);
-      generateAssessment(s.transcript.slice(0, -3), humanEntry.content, modelEntry.content, correct, {
-        user1: { id: s.user1, name: getName(s.user1) ?? 'user1' },
-        user2: { id: s.user2, name: getName(s.user2) ?? 'user2' },
-      }, witnessRole, s.cachedSystemPromptBlock!, deltaMessages, deltaAssessments, s.id).then(assessment => appendAssessment(assessment, meta)).catch(() => {});
-    }
-
-    await deliverRoundResultToSpectators(transport, s, guesserLabel, correct, reveal, scoreStr);
-    session.reshuffle(s);
-
-    const youAreNewInterrogator = s.interrogator === userId;
-    await transport.send(
-      userId,
-      `${verdict} ${reveal}\n${scoreStr}\n\n` +
-      (youAreNewInterrogator ? 'Your turn to interrogate. Ask your first question.' : 'Your partner is the interrogator now. Wait for their first question.'),
-    );
-    await transport.send(
-      partnerId,
-      `Your partner guessed ${correct ? 'correctly' : 'incorrectly'}. ${reveal}\n${scoreStr}\n\n` +
-      (!youAreNewInterrogator ? 'Your turn to interrogate. Ask your first question.' : 'Your partner is the interrogator now. Wait for their first question.'),
-    );
+  if (correct) {
+    s.teamScores.humans += 1;
+    s.winStreak = (s.winStreak ?? 0) + 1;
+    if (s.winStreak > (s.longestWinStreak ?? 0)) s.longestWinStreak = s.winStreak;
   } else {
-    s.scores[role] += correct ? 1 : -1;
-    const myScore = s.scores[role];
-    const partnerScore = s.scores[partnerRole];
-    const verdict = correct ? 'Correct! +1' : 'Wrong! -1';
-
-    s.transcript.push({ role: 'guess', content: `${g} (${reveal})`, correct, guesser: role as 'user1' | 'user2' });
-    saveState(s);
-
-    const modelEntry = s.transcript[s.transcript.length - 2];
-    const humanEntry = s.transcript[s.transcript.length - 3];
-    if (modelEntry?.role === 'model' && humanEntry) {
-      const imitateeId = humanEntry.role === 'user1' ? s.user1 : s.user2;
-      const witnessRole = humanEntry.role as 'user1' | 'user2';
-      const meta = { sessionId: s.id, guessNumber: s.transcript.filter(e => e.role === 'guess').length, guesserId: userId, imitateeId, correct };
-      ensureGameCache(s);
-      const { deltaMessages, deltaAssessments } = getDeltas(s);
-      generateAssessment(s.transcript.slice(0, -3), humanEntry.content, modelEntry.content, correct, {
-        user1: { id: s.user1, name: getName(s.user1) ?? 'user1' },
-        user2: { id: s.user2, name: getName(s.user2) ?? 'user2' },
-      }, witnessRole, s.cachedSystemPromptBlock!, deltaMessages, deltaAssessments, s.id).then(assessment => appendAssessment(assessment, meta)).catch(() => {});
-    }
-
-    await deliverRoundResultToSpectators(transport, s, guesserLabel, correct, reveal, formatSymmetricScoreStr(s));
-    session.reshuffle(s);
-
-    const youGoFirst = s.firstSender === userId;
-    await transport.send(
-      userId,
-      `${verdict} ${reveal}\nYour score: ${myScore} | Partner's score: ${partnerScore}\n\n${youGoFirst ? 'Your turn to send the first message.' : 'Your partner sends the first message.'}`,
-    );
-    await transport.send(
-      partnerId,
-      `Your partner guessed ${correct ? 'correctly' : 'incorrectly'}. ${reveal}\nYour score: ${partnerScore} | Partner's score: ${myScore}\n\n${youGoFirst ? 'Your partner sends the first message.' : 'Your turn to send the first message.'}`,
-    );
+    s.teamScores.model += 1;
+    s.winStreak = 0;
   }
+  s.totalTurns += s.currentRoundTurns;
+  s.roundCount += 1;
+  const verdict = correct ? 'Correct! Humans point' : 'Wrong! Model point';
+  const scoreStr = formatOriginalScoreStr(s);
+
+  s.transcript.push({ role: 'guess', content: `${g} (${reveal})`, correct, guesser: role as 'user1' | 'user2' });
+  saveState(s);
+
+  const modelEntry = s.transcript[s.transcript.length - 2];
+  const humanEntry = s.transcript[s.transcript.length - 3];
+  if (modelEntry?.role === 'model' && humanEntry) {
+    const imitateeId = humanEntry.role === 'user1' ? s.user1 : s.user2;
+    const witnessRole = humanEntry.role as 'user1' | 'user2';
+    const meta = { sessionId: s.id, guessNumber: s.transcript.filter(e => e.role === 'guess').length, guesserId: userId, imitateeId, correct };
+    ensureGameCache(s);
+    const { deltaMessages, deltaAssessments } = getDeltas(s);
+    generateAssessment(s.transcript.slice(0, -3), humanEntry.content, modelEntry.content, correct, {
+      user1: { id: s.user1, name: getName(s.user1) ?? 'user1' },
+      user2: { id: s.user2, name: getName(s.user2) ?? 'user2' },
+    }, witnessRole, s.cachedSystemPromptBlock!, deltaMessages, deltaAssessments, s.id).then(assessment => appendAssessment(assessment, meta)).catch(() => {});
+  }
+
+  await deliverRoundResultToSpectators(transport, s, guesserLabel, correct, reveal, scoreStr);
+  session.reshuffle(s);
+
+  const youAreNewInterrogator = s.interrogator === userId;
+  await transport.send(
+    userId,
+    `${verdict} ${reveal}\n${scoreStr}\n\n` +
+    (youAreNewInterrogator ? 'Your turn to interrogate. Ask your first question.' : 'Your partner is the interrogator now. Wait for their first question.'),
+  );
+  await transport.send(
+    partnerId,
+    `Your partner guessed ${correct ? 'correctly' : 'incorrectly'}. ${reveal}\n${scoreStr}\n\n` +
+    (!youAreNewInterrogator ? 'Your turn to interrogate. Ask your first question.' : 'Your partner is the interrogator now. Wait for their first question.'),
+  );
 }
 
 export async function handleMessage(userId: UserId, text: string, transport: Transport): Promise<void> {
@@ -558,10 +471,9 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
   const stripped = stripEmoji(text);
   if (!stripped) return;
 
-  if (s.variation === 'original') {
-    const witnessId = session.getPartner(s, s.interrogator)!;
+  const witnessId = session.getPartner(s, s.interrogator)!;
 
-    if (s.pendingResponder === witnessId) {
+  if (s.pendingResponder === witnessId) {
       if (userId !== witnessId) {
         await transport.send(userId, 'Waiting for your partner to respond. (You can still use /status, /invite, /leave.)');
         return;
@@ -641,51 +553,4 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
       }));
       if (failed.length > 0) s.spectators = s.spectators.filter(id => !failed.includes(id));
     }
-    return;
-  }
-
-  // Symmetric variation
-  if (s.pendingResponder !== null && s.pendingResponder !== userId) {
-    await transport.send(userId, 'Waiting for your partner to respond. (You can still use /status, /invite, /leave.)');
-    return;
-  }
-
-  const symmetricFairnessCheck = await checkMessageFairness(stripped, s.id);
-  if (!symmetricFairnessCheck.fair) {
-    await transport.send(userId,
-      `That message can't be used — ${symmetricFairnessCheck.reason} The AI has no way to respond to it fairly. Please try a different message.`);
-    return;
-  }
-
-  const senderRole = userId === s.user1 ? 'user1' : 'user2';
-  const partnerId = session.getPartner(s, userId)!;
-
-  ensureGameCache(s);
-  const { deltaMessages, deltaAssessments } = getDeltas(s);
-  const { text: predText, systemPrompt: sp } = await generatePrediction(
-    s.transcript,
-    senderRole,
-    {
-      user1: { id: s.user1, name: getName(s.user1) ?? 'user1' },
-      user2: { id: s.user2, name: getName(s.user2) ?? 'user2' },
-    },
-    s.cachedSystemPromptBlock!,
-    deltaMessages,
-    deltaAssessments,
-    undefined,
-    s.id,
-  );
-  const prediction = stripEmoji(predText);
-  s.lastSystemPrompt = sp;
-  appendMessage(userId, partnerId, stripped);
-
-  session.addToTranscript(s, senderRole, stripped);
-  session.addToTranscript(s, 'model', prediction);
-  s.pendingResponder = partnerId;
-  saveState(s);
-
-  const senderLabel = getName(userId)!;
-  await deliverToSender(transport, userId, stripped, prediction);
-  await deliverToReceiver(transport, partnerId, { human: stripped, prediction }, s.imitationFirst);
-  await deliverToSpectators(transport, s, senderLabel, stripped, prediction);
 }

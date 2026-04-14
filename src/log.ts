@@ -1,8 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { GameSession, TranscriptEntry } from './types';
+import { STATE_DIR } from './config';
 
-const LOG_DIR = path.join(process.cwd(), 'logs');
+const LOG_DIR = path.join(STATE_DIR, 'logs');
 
 function formatTranscript(transcript: TranscriptEntry[], session: GameSession): string {
   const id1 = String(session.user1);
@@ -33,7 +34,6 @@ function writeLog(session: GameSession, ended: boolean): void {
 
   const headerLines = [
     `Session: ${session.id}`,
-    `Variation: ${session.variation}`,
     `User 1: ${session.user1}`,
     `User 2: ${session.user2}`,
   ];

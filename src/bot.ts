@@ -47,9 +47,7 @@ export function setupTelegram(transport: Transport): Telegraf {
     const userId = uid(ctx);
     const payload = ctx.startPayload;
     if (!payload) {
-      await engine.handleVariationSelect(userId, 'original', tgTransport);
-    } else if (payload === 'symmetric') {
-      await engine.handleVariationSelect(userId, 'symmetric', tgTransport);
+      await engine.handleStart(userId, tgTransport);
     } else {
       await engine.handleJoin(userId, payload, tgTransport);
     }
