@@ -105,7 +105,7 @@ export function getProfile(userId: UserId, partnerId: UserId): UserProfile {
 }
 
 const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,31}$/;
-const RESERVED_NAME_RE = /^user[0-9]+$/;
+const RESERVED_NAME_RE = /^user[0-9]+$|^claude$/i;
 
 export function isValidName(name: string): boolean {
   return NAME_RE.test(name) && !RESERVED_NAME_RE.test(name);
