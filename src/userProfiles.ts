@@ -8,7 +8,6 @@ interface AssessmentRecord {
   text: string;
   sessionId: string;
   guessNumber: number;
-  guesserId: UserId;
   imitateeId: UserId;  // the user being imitated (0 = general/compacted)
   correct: boolean;
   timestamp: string;
@@ -57,7 +56,7 @@ function loadStore(): Store {
     }
     const store = raw as Store;
     const before = store.assessments.list.length;
-    store.assessments.list = store.assessments.list.filter(r => r.guesserId != null && r.imitateeId != null);
+    store.assessments.list = store.assessments.list.filter(r => r.imitateeId != null);
     if (store.assessments.list.length !== before) saveStore(store);
     return store;
   } catch { return { ...EMPTY_STORE, users: {}, pairs: {}, assessments: { list: [] } }; }
@@ -87,7 +86,7 @@ function saveStore(store: Store): void {
   );
   const assessments = {
     list: store.assessments.list
-      .filter(r => !stale.has(r.guesserId.toString()) && !stale.has(r.imitateeId.toString()))
+      .filter(r => !stale.has(r.imitateeId.toString()))
       .sort((a, b) => a.timestamp.localeCompare(b.timestamp)),
   };
   const out = {
@@ -190,10 +189,28 @@ export function setName(userId: UserId, name: string): void {
 
 export function appendAssessment(
   assessment: string,
-  meta: { sessionId: string; guessNumber: number; guesserId: UserId; imitateeId: UserId; correct: boolean }
+  meta: { sessionId: string; guessNumber: number; imitateeId: UserId; correct: boolean }
 ): void {
   const store = loadStore();
   store.assessments.list.push({ text: assessment, timestamp: new Date().toISOString(), ...meta });
+  saveStore(store);
+}
+
+export function getAssessmentsForWitness(imitateeId: UserId): AssessmentRecord[] {
+  return loadStore().assessments.list.filter(r => r.imitateeId === imitateeId);
+}
+
+export function replaceWitnessAssessments(imitateeId: UserId, summary: string): void {
+  const store = loadStore();
+  store.assessments.list = store.assessments.list.filter(r => r.imitateeId !== imitateeId);
+  store.assessments.list.push({
+    text: summary,
+    sessionId: '',
+    guessNumber: 0,
+    imitateeId,
+    correct: false,
+    timestamp: new Date().toISOString(),
+  });
   saveStore(store);
 }
 

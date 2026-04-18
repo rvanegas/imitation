@@ -109,7 +109,6 @@ function migrate(): void {
   // Assessments: remap guesserId / imitateeId
   const assessmentList = (profiles['__assessments']?.list ?? profiles.assessments?.list ?? []).map((a: any) => ({
     ...a,
-    guesserId: idMap.get(a.guesserId) ?? a.guesserId,
     imitateeId: idMap.get(a.imitateeId) ?? a.imitateeId,
   }));
 

@@ -349,6 +349,43 @@ export async function generateAssessment(
   return block.text.trim();
 }
 
+export async function compactWitnessAssessments(
+  assessments: string[],
+  witnessName: string,
+  sessionId?: string,
+): Promise<string> {
+  const avgLen = Math.round(assessments.reduce((n, a) => n + a.length, 0) / assessments.length);
+  const targetLen = avgLen * 2;
+
+  const prompt =
+    `You have accumulated ${assessments.length} assessments about how to imitate ${witnessName} in a Turing Test. ` +
+    `Synthesize them into a single comprehensive assessment that preserves all useful insights without redundancy. ` +
+    `Target length: approximately ${targetLen} characters (roughly twice the average length of the individual assessments). ` +
+    `Write in the same abstract style — applicable to future imitations, no references to specific conversations. Write in English.\n\n` +
+    assessments.map((a, i) => `${i + 1}. ${a}`).join('\n') +
+    `\n\nReturn only the synthesized assessment text.`;
+
+  const response = await client.messages.create({
+    model: ANTHROPIC_MODEL,
+    max_tokens: 1024,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  appendCostAudit({
+    timestamp: new Date().toISOString(),
+    operation: 'compact',
+    sessionId,
+    provider: 'anthropic',
+    model: ANTHROPIC_MODEL,
+    inputTokens: response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
+  });
+
+  const block = response.content[0];
+  if (block.type !== 'text') throw new Error('Unexpected response type from Claude');
+  return block.text.trim();
+}
+
 const FAIRNESS_SYSTEM_PROMPT =
   `You are a fairness referee for an imitation game (Turing Test). Identify messages that exploit AI blindspots, making the game impossible rather than merely difficult.
 

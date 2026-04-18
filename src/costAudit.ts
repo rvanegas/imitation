@@ -6,7 +6,7 @@ const AUDIT_FILE = path.join(STATE_DIR, 'cost-audit.jsonl');
 
 interface CostAuditEntry {
   timestamp: string;
-  operation: 'prediction' | 'assessment' | 'fairness';
+  operation: 'prediction' | 'assessment' | 'fairness' | 'compact';
   sessionId?: string;
   provider: 'anthropic' | 'ollama';
   model: string;

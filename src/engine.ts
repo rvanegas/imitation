@@ -1,11 +1,12 @@
 import { GameSession, UserId } from './types';
 import { Transport } from './transport';
 import * as session from './session';
-import { generatePrediction, generateAssessment, buildCachedBlock, checkMessageFairness } from './imitation';
+import { generatePrediction, generateAssessment, buildCachedBlock, checkMessageFairness, compactWitnessAssessments } from './imitation';
 import {
   getProfile, appendMessage, getName, getOrAssignName, setName,
   isValidName, getUserIdByName, appendAssessment, getAssessmentsWithMeta,
   getLatestAssessmentForSession, touchUserSession,
+  getAssessmentsForWitness, replaceWitnessAssessments,
 } from './userProfiles';
 import {
   deliverToSender, deliverToReceiver, deliverToSpectators,
@@ -58,6 +59,18 @@ function getDeltas(s: GameSession & { user1: UserId; user2: UserId }) {
     },
     deltaAssessments: getAssessmentsWithMeta().slice(s.baseAssessmentCount ?? 0),
   };
+}
+
+const COMPACT_THRESHOLD = 20;
+
+function maybeCompactWitness(imitateeId: UserId, sessionId: string): void {
+  const records = getAssessmentsForWitness(imitateeId);
+  if (records.length <= COMPACT_THRESHOLD) return;
+  const witnessName = getName(imitateeId) ?? String(imitateeId);
+  const texts = records.map(r => r.text);
+  compactWitnessAssessments(texts, witnessName, sessionId)
+    .then(summary => replaceWitnessAssessments(imitateeId, summary))
+    .catch(() => {});
 }
 
 // Human score = h/total * 2 - 1  (ranges –1 to +1; 0 = random chance)
@@ -420,13 +433,16 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
   if (modelEntry?.role === 'model' && humanEntry) {
     const imitateeId = humanEntry.role === 'user1' ? s.user1 : s.user2;
     const witnessRole = humanEntry.role as 'user1' | 'user2';
-    const meta = { sessionId: s.id, guessNumber: s.transcript.filter(e => e.role === 'guess').length, guesserId: userId, imitateeId, correct };
+    const meta = { sessionId: s.id, guessNumber: s.transcript.filter(e => e.role === 'guess').length, imitateeId, correct };
     ensureGameCache(s);
     const { deltaMessages, deltaAssessments } = getDeltas(s);
     generateAssessment(s.transcript.slice(0, -3), humanEntry.content, modelEntry.content, correct, {
       user1: { id: s.user1, name: getName(s.user1) ?? 'user1' },
       user2: { id: s.user2, name: getName(s.user2) ?? 'user2' },
-    }, witnessRole, s.cachedSystemPromptBlock!, deltaMessages, deltaAssessments, s.id).then(assessment => appendAssessment(assessment, meta)).catch(() => {});
+    }, witnessRole, s.cachedSystemPromptBlock!, deltaMessages, deltaAssessments, s.id).then(assessment => {
+      appendAssessment(assessment, meta);
+      maybeCompactWitness(imitateeId, s.id);
+    }).catch(() => {});
   }
 
   await deliverRoundResultToSpectators(transport, s, guesserLabel, correct, reveal, scoreStr);
