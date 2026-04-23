@@ -13,12 +13,14 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
     "@iarna/toml": "^2.2.5",
+    "expo": "^55.0.15",
     "openai": "^6.34.0",
     "telegraf": "^4.16.3",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
+    "@types/react": "~19.2.10",
     "@types/ws": "^8.5.14",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.2"

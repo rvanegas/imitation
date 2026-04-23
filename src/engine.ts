@@ -113,10 +113,10 @@ export function initSessions(transport: Transport): void {
 
 export const HELP_TEXT =
   '/start — Create a new Turing Test game\n' +
-  '/human A|B — Guess which message was written by the human\n' +
+  '/human A|B — Make your call on which message was written by the human\n' +
   '/invite — Get the session invite; first to join becomes player 2, others watch\n' +
   '/status — Show current turn, score, and spectator count\n' +
-  '/reflection — Show the AI\'s assessment of the most recent guess\n' +
+  '/reflection — Show the AI\'s assessment of the most recent call\n' +
   '/leave — Leave the current session\n' +
   '/restart <user1> <user2> — Restart the game with two players from the session\n' +
   '/setname <name> — Set your display name\n' +
@@ -186,8 +186,8 @@ export async function handleJoin(
     initGameCache(joined as GameSession & { user1: UserId; user2: UserId });
     session.persistSessions();
     await transport.send(joined.user2!, HELP_TEXT);
-    await transport.send(joined.user1!, 'Game started! You are the interrogator — ask your first question.');
-    await transport.send(joined.user2!, 'Game started! Your partner is the interrogator. Wait for their first question.');
+    await transport.send(joined.user1!, 'Game started! You are the judge — take the first turn.');
+    await transport.send(joined.user2!, 'Game started! Your partner is the judge. Wait for their first turn.');
     return;
   }
 
@@ -277,23 +277,23 @@ export async function handleStatus(userId: UserId, transport: Transport): Promis
   const name1 = getName(s.user1) ?? 'user1';
   const name2 = getName(s.user2) ?? 'user2';
 
-  const interrogatorId = s.interrogator;
-  const interrogatorName = interrogatorId === s.user1 ? name1 : name2;
-  const interrogatorLabel = isSpectator ? interrogatorName : (interrogatorId === userId ? 'you' : interrogatorName);
-  const interrogatorLine = `Interrogator: ${interrogatorLabel}`;
+  const judgeId = s.interrogator;
+  const judgeName = judgeId === s.user1 ? name1 : name2;
+  const judgeLabel = isSpectator ? judgeName : (judgeId === userId ? 'you' : judgeName);
+  const judgeLine = `Judge: ${judgeLabel}`;
 
   let turnLine: string;
   if (isSpectator) {
     const witnessName = s.pendingResponder !== null ? (s.pendingResponder === s.user1 ? name1 : name2) : null;
     turnLine = witnessName !== null
-      ? `Waiting for ${witnessName} to answer.`
-      : `Waiting for ${interrogatorName} to ask a question.`;
+      ? `Waiting for ${witnessName} to respond.`
+      : `Waiting for ${judgeName} to take their turn.`;
   } else {
-    const isInterrogator = userId === s.interrogator;
+    const isJudge = userId === s.interrogator;
     if (s.pendingResponder !== null) {
-      turnLine = isInterrogator ? 'Waiting for your partner to answer.' : 'Your turn to answer.';
+      turnLine = isJudge ? 'Waiting for your partner to respond.' : 'Your turn to respond.';
     } else {
-      turnLine = isInterrogator ? 'Your turn to ask a question.' : `Waiting for ${interrogatorName} to ask a question.`;
+      turnLine = isJudge ? 'Your turn.' : `Waiting for ${judgeName} to take their turn.`;
     }
   }
 
@@ -301,7 +301,7 @@ export async function handleStatus(userId: UserId, transport: Transport): Promis
 
   const playersLine = `Players: ${name1}, ${name2}`;
 
-  await transport.send(userId, `${playersLine}\n${interrogatorLine}\n${turnLine}\n${scoreLine}\n${spectatorLine}`);
+  await transport.send(userId, `${playersLine}\n${judgeLine}\n${turnLine}\n${scoreLine}\n${spectatorLine}`);
 }
 
 export async function handleRestart(
@@ -334,8 +334,8 @@ export async function handleRestart(
   initGameCache(s as GameSession & { user1: UserId; user2: UserId });
   session.persistSessions();
 
-  const msg1 = 'Game restarted! You are the interrogator — ask your first question.';
-  const msg2 = 'Game restarted! Your partner is the interrogator. Wait for their first question.';
+  const msg1 = 'Game restarted! You are the judge — take the first turn.';
+  const msg2 = 'Game restarted! Your partner is the judge. Wait for their first turn.';
 
   await transport.send(s.user1!, msg1);
   await transport.send(s.user2!, msg2);
@@ -371,7 +371,7 @@ export async function handleLeave(userId: UserId, transport: Transport): Promise
   }
 }
 
-export async function handleHuman(userId: UserId, guess: string, transport: Transport): Promise<void> {
+export async function handleHuman(userId: UserId, call: string, transport: Transport): Promise<void> {
   const s = session.getSessionForParticipant(userId);
   if (!s) {
     await transport.send(userId, 'No active session.');
@@ -390,11 +390,11 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
 
   const hasExchange = s.transcript.some(e => e.role === 'model');
   if (userId !== s.interrogator || s.pendingResponder !== null || !hasExchange) {
-    await transport.send(userId, 'It is not your turn to guess, or no exchange has happened yet.');
+    await transport.send(userId, 'It is not your turn to call, or no exchange has happened yet.');
     return;
   }
 
-  const g = guess.toUpperCase();
+  const g = call.toUpperCase();
   if (g !== 'A' && g !== 'B') {
     await transport.send(userId, 'Usage: /human A  or  /human B');
     return;
@@ -410,7 +410,7 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
   const reveal = s.imitationFirst
     ? 'A was the model, B was the human.'
     : 'A was the human, B was the model.';
-  const guesserLabel = getName(userId)!;
+  const callerLabel = getName(userId)!;
 
   if (correct) {
     s.teamScores.humans += 1;
@@ -425,7 +425,7 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
   const verdict = correct ? 'Correct! Humans point' : 'Wrong! Model point';
   const scoreStr = formatOriginalScoreStr(s);
 
-  s.transcript.push({ role: 'guess', content: `${g} (${reveal})`, correct, guesser: role as 'user1' | 'user2' });
+  s.transcript.push({ role: 'guess', content: `${g} (${reveal})`, correct, guesser: role as 'user1' | 'user2' }); // role literal 'guess' kept for data compatibility
   saveState(s);
 
   const modelEntry = s.transcript[s.transcript.length - 2];
@@ -433,7 +433,7 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
   if (modelEntry?.role === 'model' && humanEntry) {
     const imitateeId = humanEntry.role === 'user1' ? s.user1 : s.user2;
     const witnessRole = humanEntry.role as 'user1' | 'user2';
-    const meta = { sessionId: s.id, guessNumber: s.transcript.filter(e => e.role === 'guess').length, imitateeId, correct };
+    const meta = { sessionId: s.id, guessNumber: s.transcript.filter(e => e.role === 'guess').length, imitateeId, correct }; // 'guess' role is internal/persisted
     ensureGameCache(s);
     const { deltaMessages, deltaAssessments } = getDeltas(s);
     generateAssessment(s.transcript.slice(0, -3), humanEntry.content, modelEntry.content, correct, {
@@ -445,19 +445,19 @@ export async function handleHuman(userId: UserId, guess: string, transport: Tran
     }).catch(() => {});
   }
 
-  await deliverRoundResultToSpectators(transport, s, guesserLabel, correct, reveal, scoreStr);
+  await deliverRoundResultToSpectators(transport, s, callerLabel, correct, reveal, scoreStr);
   session.reshuffle(s);
 
-  const youAreNewInterrogator = s.interrogator === userId;
+  const youAreNewJudge = s.interrogator === userId;
   await transport.send(
     userId,
     `${verdict} ${reveal}\n${scoreStr}\n\n` +
-    (youAreNewInterrogator ? 'Your turn to interrogate. Ask your first question.' : 'Your partner is the interrogator now. Wait for their first question.'),
+    (youAreNewJudge ? 'You are the judge — take the first turn.' : 'Your partner is the judge now. Wait for their first turn.'),
   );
   await transport.send(
     partnerId,
-    `Your partner guessed ${correct ? 'correctly' : 'incorrectly'}. ${reveal}\n${scoreStr}\n\n` +
-    (!youAreNewInterrogator ? 'Your turn to interrogate. Ask your first question.' : 'Your partner is the interrogator now. Wait for their first question.'),
+    `Your partner called ${correct ? 'correctly' : 'incorrectly'}. ${reveal}\n${scoreStr}\n\n` +
+    (!youAreNewJudge ? 'You are the judge — take the first turn.' : 'Your partner is the judge now. Wait for their first turn.'),
   );
 }
 
@@ -480,7 +480,7 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
   }
 
   if (/^human[/\s]*(\w+\s+)*[ab]\b/i.test(text.trim()) || /^[ab]$/i.test(text.trim())) {
-    await transport.send(userId, 'Looks like you meant to guess. Use /human A or /human B.');
+    await transport.send(userId, 'Looks like you meant to make your call. Use /human A or /human B.');
     return;
   }
 
@@ -513,7 +513,9 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
       s.currentRoundTurns += 1;
       saveState(s);
 
-      await transport.send(userId, `You: ${stripped}\nModel: ${prediction}`);
+      const myLabel = s.imitationFirst ? 'B' : 'A';
+      const modelLabel = s.imitationFirst ? 'A' : 'B';
+      await transport.send(userId, `You (${myLabel}): ${stripped}\nModel (${modelLabel}): ${prediction}`);
       await deliverToReceiver(transport, s.interrogator, { human: stripped, prediction }, s.imitationFirst);
       const witnessLabel = getName(witnessId)!;
       await deliverToSpectators(transport, s, witnessLabel, stripped, prediction);
@@ -521,13 +523,13 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
     }
 
     if (userId !== s.interrogator) {
-      await transport.send(userId, 'Waiting for your partner to ask a question. (You can still use /status, /invite, /leave.)');
+      await transport.send(userId, 'Waiting for your partner to take their turn. (You can still use /status, /invite, /leave.)');
       return;
     }
-    const interrogatorFairnessCheck = await checkMessageFairness(stripped, s.id);
-    if (!interrogatorFairnessCheck.fair) {
+    const judgeFairnessCheck = await checkMessageFairness(stripped, s.id);
+    if (!judgeFairnessCheck.fair) {
       await transport.send(userId,
-        `That message can't be used — ${interrogatorFairnessCheck.reason} The AI has no way to answer it fairly. Please try a different question.`);
+        `That message can't be used — ${judgeFairnessCheck.reason} The AI has no way to respond fairly. Please try something different.`);
       return;
     }
     const witnessRole = witnessId === s.user1 ? 'user1' : 'user2';
@@ -545,6 +547,7 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
       wDeltaAssessments,
       stripped,
       s.id,
+      s.imitationFirst,
     );
     const prediction = stripEmoji(predText);
     s.pendingPrediction = prediction;
@@ -560,8 +563,8 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
     await transport.send(witnessId, stripped);
 
     if (s.spectators.length > 0) {
-      const interrogatorLabel = getName(s.interrogator)!;
-      const msg = `${interrogatorLabel} (interrogator): ${stripped}`;
+      const judgeLabel = getName(s.interrogator)!;
+      const msg = `${judgeLabel} (judge): ${stripped}`;
       const failed: UserId[] = [];
       await Promise.all(s.spectators.map(async id => {
         try { await transport.send(id, msg); }

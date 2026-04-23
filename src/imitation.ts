@@ -117,6 +117,7 @@ function buildDeltaBlocks(
   deltaAssessments: Array<{ text: string; imitateeId: UserId }>,
   isOpener: boolean,
   selfFollow: boolean,
+  modelLabel?: string,
 ): SystemPromptBlock[] {
   const witness = players[witnessRole];
   const interrogatorRole = witnessRole === 'user1' ? 'user2' : 'user1';
@@ -124,9 +125,12 @@ function buildDeltaBlocks(
 
   const blocks: SystemPromptBlock[] = [];
 
+  const labelLine = modelLabel
+    ? ` The judge sees your responses labeled "${modelLabel}". The witness is labeled "${modelLabel === 'A' ? 'B' : 'A'}".`
+    : '';
   // Always present: role designation
   blocks.push({
-    text: `# Role\nAt the start of this game, you (Claude) were initialized as a duplicate of ${witness.name}, sharing their persona, style, and voice. Since then, you and ${witness.name} have been answering the interrogator's questions independently. Your turns in the transcript are labeled "[Claude (initialized as ${witness.name})]" — those are your own conversational history. ${witness.name}'s real turns are labeled "[${witness.name} (witness)]" — those belong to the other participant. You share the same starting persona but have been diverging as distinct persons since the game began.\n\n${interrogator.name} is the interrogator.`,
+    text: `# Role\nAt the start of this game, you (Claude) were initialized as a duplicate of ${witness.name}, sharing their persona, style, and voice. Since then, you and ${witness.name} have been responding independently. Your turns in the transcript are labeled "[Claude (initialized as ${witness.name})]" — those are your own conversational history. ${witness.name}'s real turns are labeled "[${witness.name} (witness)]" — those belong to the other participant. You share the same starting persona but have been diverging as distinct persons since the game began.\n\nCritically: you and the witness respond independently. When a follow-up arrives, you must continue from your own prior turn — not the witness's. The witness's response is theirs. Do not explain, elaborate, or build on what the witness said. Your continuity is with what YOU said.\n\n${interrogator.name} is the judge.${labelLine}`,
   });
 
   // New messages added during this game
@@ -177,6 +181,7 @@ export async function generatePrediction(
   deltaAssessments: Array<{ text: string; imitateeId: UserId }>,
   questionContext?: string,
   sessionId?: string,
+  imitationFirst?: boolean,
 ): Promise<{ text: string; systemPrompt: string }> {
   let prompt = '';
 
@@ -193,7 +198,7 @@ export async function generatePrediction(
         lastHumanRole = entry.role;
         const p = players[entry.role];
         const roleLabel = entry.role === senderRole ? 'witness' : 'interrogator';
-        lines.push(`[${p.name} (${roleLabel})]: ${entry.content}`);
+        lines.push(`[${p.name} (${roleLabel === 'interrogator' ? 'judge' : roleLabel})]: ${entry.content}`);
       }
     }
     prompt = `Conversation so far:\n${lines.join('\n')}\n\n`;
@@ -211,7 +216,8 @@ export async function generatePrediction(
   const lastRealRole = realMessages.at(-1)?.role ?? null;
   const selfFollow = !isOpener && !questionContext && lastRealRole === senderRole;
 
-  const deltaBlocks = buildDeltaBlocks(senderRole, players, deltaMessages, deltaAssessments, isOpener, selfFollow);
+  const modelLabel = imitationFirst !== undefined ? (imitationFirst ? 'A' : 'B') : undefined;
+  const deltaBlocks = buildDeltaBlocks(senderRole, players, deltaMessages, deltaAssessments, isOpener, selfFollow, modelLabel);
   const allBlocks = [...cachedBlock, ...deltaBlocks];
   const systemPrompt = allBlocks.map(b => b.text).join('\n\n');
 
@@ -291,7 +297,7 @@ export async function generateAssessment(
   }
 
   const reflectionText =
-    `# Reflection\nThe imitation attempt is over. Reflect on how well you did across all dimensions of human-likeness, drawing on the entire transcript as cumulative evidence — not just the final exchange. All parties' contributions (interrogator, witness, and your own turns) reveal information about who the witness is.\n\nDimensions to assess:\n- Surface style: message length, tone, vocabulary, punctuation, spelling/grammar habits\n- Content: the witness's characteristic topics, areas of expertise or ignorance, what they choose to share or withhold, how much depth they bring to different subjects — use the full conversation to build this picture\n- Conversational pragmatics: speech acts performed, responsiveness, informativeness level, how they handle the flow of exchange\n\nPrior lessons you have accumulated are listed above under # Assessments and # Assessments added this game. Write a new lesson that builds on them — extending, refining, or updating what is already known rather than repeating it. If the new attempt confirms an existing lesson, note any new nuance; if it contradicts one, revise your understanding. Write in abstract terms applicable to future imitations of this witness. Do not reference the specific messages or conversation. Write in English regardless of the conversation language, so assessments remain consistent across sessions.`;
+    `# Reflection\nThe imitation attempt is over. Reflect on how well you did across all dimensions of human-likeness, drawing on the entire transcript as cumulative evidence — not just the final exchange. All parties' contributions (judge, witness, and your own turns) reveal information about who the witness is.\n\nDimensions to assess:\n- Surface style: message length, tone, vocabulary, punctuation, spelling/grammar habits\n- Content: the witness's characteristic topics, areas of expertise or ignorance, what they choose to share or withhold, how much depth they bring to different subjects — use the full conversation to build this picture\n- Conversational pragmatics: speech acts performed, responsiveness, informativeness level, how they handle the flow of exchange\n\nPrior lessons you have accumulated are listed above under # Assessments and # Assessments added this game. Write a new lesson that builds on them — extending, refining, or updating what is already known rather than repeating it. If the new attempt confirms an existing lesson, note any new nuance; if it contradicts one, revise your understanding. Write in abstract terms applicable to future imitations of this witness. Do not reference the specific messages or conversation. Write in English regardless of the conversation language, so assessments remain consistent across sessions.`;
 
   const deltaBlocks = buildDeltaBlocks(witnessRole, players, deltaMessages, deltaAssessments, false, false);
   const allBlocks = [...cachedBlock, ...deltaBlocks, { text: reflectionText }];
@@ -303,7 +309,7 @@ export async function generateAssessment(
     `The human actually wrote: "${humanMessage}"\n` +
     `Your imitation was: "${aiPrediction}"\n\n` +
     `${outcome}\n\n` +
-    `In 3-4 sentences, assess what worked or didn't work. Treat the entire transcript above as cumulative evidence — every message from all three parties (interrogator, witness, your own turns) tells you something about who the witness is. Assess across all dimensions: surface style (length, tone, vocabulary, punctuation), content (the witness's characteristic topics, what they know deeply vs. shallowly, what they choose to share, what they avoid — build this from the full conversation, not just the final exchange), and conversational pragmatics (speech acts, responsiveness, informativeness level). ` +
+    `In 3-4 sentences, assess what worked or didn't work. Treat the entire transcript above as cumulative evidence — every message from all three parties (judge, witness, your own turns) tells you something about who the witness is. Assess across all dimensions: surface style (length, tone, vocabulary, punctuation), content (the witness's characteristic topics, what they know deeply vs. shallowly, what they choose to share, what they avoid — build this from the full conversation, not just the final exchange), and conversational pragmatics (speech acts, responsiveness, informativeness level). ` +
     `Consider the prior lessons already recorded above — write something that adds new insight or refines existing understanding, not a repetition of what is already known. ` +
     `Write in abstract terms applicable to future imitations of this witness — do not reference the specific messages or conversation, since the assessment will be read later without that context.`;
 

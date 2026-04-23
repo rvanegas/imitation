@@ -14,7 +14,7 @@ function formatTranscript(transcript: TranscriptEntry[], session: GameSession): 
     if (entry.role === 'guess') {
       const guesserLabel = entry.guesser === 'user1' ? id1 : id2;
       const verdict = entry.correct ? 'CORRECT' : 'WRONG';
-      lines.push(`[${guesserLabel} guessed: ${entry.content} — ${verdict}]`);
+      lines.push(`[${guesserLabel} called: ${entry.content} — ${verdict}]`);
     } else if (entry.role === 'model') {
       const label = lastHumanRole === 'user1' ? `[${id1} imitation]` : `[${id2} imitation]`;
       lines.push(`${label}: ${entry.content}`);

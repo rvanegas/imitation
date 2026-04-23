@@ -56,7 +56,7 @@ export async function deliverToSpectators(
 export async function deliverRoundResultToSpectators(
   transport: Transport,
   session: GameSession,
-  guesserLabel: string,
+  callerLabel: string,
   correct: boolean,
   reveal: string,
   scoreStr: string,
@@ -64,7 +64,7 @@ export async function deliverRoundResultToSpectators(
   if (session.spectators.length === 0) return;
   const verdict = correct ? 'correctly' : 'incorrectly';
   const text =
-    `${guesserLabel} guessed ${verdict}. ${reveal}\n` +
+    `${callerLabel} called ${verdict}. ${reveal}\n` +
     `Score — ${scoreStr}\n\n` +
     `Use /leave to stop watching.`;
   await sendToSpectators(transport, session, text);

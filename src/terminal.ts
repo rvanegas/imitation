@@ -59,7 +59,7 @@ Meta commands (not sent to the game):
 Game commands (issued as the active user):
   /start                  Create a Turing Test game and get an invite token
   /start <token>          Join a game (or watch as spectator) via invite token
-  /human A|B              Submit a guess
+  /human A|B              Make your call on which is the human
   /invite                 Show the session invite token
   /status                 Show turn, score, and spectators
   /leave                  Leave the session

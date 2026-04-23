@@ -11,6 +11,7 @@ npm run dev server -t           # Same as --no-telegram
 npm run dev terminal <name>     # Connect a named terminal client to the server
 npm run build                   # Compile TypeScript to dist/
 npm run start                   # Run compiled output from dist/
+cd app && npx expo start        # Run Expo dev server (./app)
 ```
 
 No test suite exists. There is no linter configured beyond TypeScript strict mode.
@@ -33,14 +34,14 @@ Unix socket defaults to `$XDG_RUNTIME_DIR/imitation/imitation.sock`.
 
 ## Architecture
 
-This is a game implementing the Imitation Game (Turing Test). Two players chat in a Q&A format; after each exchange the AI generates what it predicts the witness would have written. The interrogator sees two options (A and B, one human, one AI) and guesses which is human.
+This is a game implementing the Imitation Game (Turing Test). Two players exchange messages; after each exchange the AI generates what it predicts the witness would have written. The judge sees two options (A and B, one human, one AI) and calls which is human.
 
 **Game flow:**
 1. Player A sends `/start` → gets an invite token
-2. Player B joins via token → game begins; Player A is the interrogator
-3. Interrogator asks a question → `imitation.ts` generates a blind AI prediction of the witness's answer
-4. Witness answers → `delivery.ts` sends both to the interrogator (randomized A/B order)
-5. Interrogator guesses with `/human A` or `/human B` (or `/a`/`/b`)
+2. Player B joins via token → game begins; Player A is the judge
+3. Judge takes the first turn → `imitation.ts` generates a blind AI prediction of the witness's response
+4. Witness responds → `delivery.ts` sends both to the judge (randomized A/B order)
+5. Judge calls with `/human A` or `/human B` (or `/a`/`/b`)
 6. Score updates, roles alternate via `session.ts`
 
 **Key files:**
@@ -62,9 +63,9 @@ This is a game implementing the Imitation Game (Turing Test). Two players chat i
 
 **Key state in `GameSession`:**
 - `imitationFirst` — randomized each round; determines whether A=AI/B=human or vice versa
-- `pendingResponder` — `null`=interrogator's turn, `witnessId`=answer phase
-- `interrogator` — who is asking/guessing this round
-- `pendingPrediction` / `pendingSystemPrompt` — stored between question and answer
+- `pendingResponder` — `null`=judge's turn, `witnessId`=response phase
+- `interrogator` — field name retained for data compatibility; holds the judge's UserId
+- `pendingPrediction` / `pendingSystemPrompt` — stored between judge's message and witness response
 - `teamScores` — humans vs. model scores
 
 **Commands available in-game:**

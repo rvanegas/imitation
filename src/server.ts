@@ -11,6 +11,7 @@ class CombinedTransport implements Transport {
   private sockets = new Map<UserId, net.Socket>();
   private wsTransport: WebSocketTransport;
   private telegramSend: ((userId: UserId, text: string) => Promise<void>) | null = null;
+  private botUsername = '';
 
   constructor(wsTransport: WebSocketTransport) {
     this.wsTransport = wsTransport;
@@ -18,6 +19,10 @@ class CombinedTransport implements Transport {
 
   setTelegramSend(fn: (userId: UserId, text: string) => Promise<void>): void {
     this.telegramSend = fn;
+  }
+
+  setBotUsername(username: string): void {
+    this.botUsername = username;
   }
 
   register(userId: UserId, socket: net.Socket): void {
@@ -47,7 +52,10 @@ class CombinedTransport implements Transport {
     if (userId !== undefined && this.wsTransport.has(userId)) {
       return this.wsTransport.makeInviteLink(token);
     }
-    return token;
+    const parts: string[] = [token];
+    if (this.botUsername) parts.push(`https://t.me/${this.botUsername}?start=${token}`);
+    parts.push(`imitation://join/${token}`);
+    return parts.join('\n');
   }
 }
 
@@ -68,6 +76,9 @@ export function start(telegram: boolean): void {
       if (chatId !== undefined) await bot.telegram.sendMessage(chatId, text);
     });
     bot.launch();
+    bot.telegram.getMe().then((me: { username?: string }) => {
+      if (me.username) transport.setBotUsername(me.username);
+    }).catch(() => {});
     console.log('Telegram bot running.');
   }
 

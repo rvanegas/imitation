@@ -22,9 +22,9 @@ export interface GameSession {
   imitationFirst: boolean;
   timeoutHandle: ReturnType<typeof setTimeout>;
   transcript: TranscriptEntry[];  // interleaved actual messages and model predictions
-  // null=interrogator's turn, witnessId=answer phase
+  // null=judge's turn, witnessId=answer phase
   pendingResponder: UserId | null;
-  interrogator: UserId;           // who is asking/guessing this round
+  interrogator: UserId;           // who is the judge this round
   pendingPrediction: string | null; // AI prediction stored between question and answer
   pendingSystemPrompt: string | null; // system prompt paired with pendingPrediction
   teamScores: { humans: number; model: number };  // raw point counts
