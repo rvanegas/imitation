@@ -8,7 +8,11 @@
     "dev": "ts-node src/main.ts",
     "build": "tsc",
     "start": "node dist/main.js",
-    "compact": "ts-node src/compact.ts"
+    "compact": "ts-node src/compact.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "experiment": "ts-node src/main.ts experiment"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
@@ -22,7 +26,9 @@
     "@types/node": "^20.14.0",
     "@types/react": "~19.2.10",
     "@types/ws": "^8.5.14",
+    "@vitest/coverage-v8": "^4.1.8",
     "ts-node": "^10.9.2",
-    "typescript": "^5.5.2"
+    "typescript": "^5.5.2",
+    "vitest": "^4.1.8"
   }
 }
