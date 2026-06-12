@@ -4,6 +4,7 @@ import { Transport } from './transport';
 import { UserId } from './types';
 import * as engine from './engine';
 import { getName, getOrCreateUserIdByName, getTelegramId } from './userProfiles';
+import { migrateAssessmentsToProfiles } from './assessments';
 import { SOCKET_PATH, WS_PORT } from './config';
 import { WebSocketTransport, startWebSocketServer } from './websocket';
 
@@ -64,6 +65,11 @@ export function start(telegram: boolean): void {
   const transport = new CombinedTransport(wsTransport);
   engine.initSessions(transport);
 
+  // One-time: fold legacy assessment essays into rolling profiles.
+  migrateAssessmentsToProfiles().catch(err => {
+    console.error('Assessment migration failed (will retry next start):', err?.message ?? err);
+  });
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let bot: any = null;
 
@@ -106,7 +112,8 @@ export function start(telegram: boolean): void {
         case 'leave':   await engine.handleLeave(userId, transport); break;
         case 'restart': await engine.handleRestart(userId, args[0] ?? '', args[1] ?? '', transport); break;
         case 'setname': await engine.handleSetName(userId, args[0] ?? '', transport); break;
-        case 'help':    await engine.handleHelp(userId, transport); break;
+        case 'help':        await engine.handleHelp(userId, transport); break;
+        case 'leaderboard': await engine.handleLeaderboard(userId, transport); break;
         default:
           await transport.send(userId, `Unknown command: /${cmd}`);
       }

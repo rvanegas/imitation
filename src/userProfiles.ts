@@ -1,9 +1,12 @@
 import * as fs from 'fs';
-import { UserId, UserProfile } from './types';
+import { UserId, UserProfile, UserStats } from './types';
 import { PROFILES_FILE as PROFILES_PATH } from './config';
 
 const MAX_BYTES_PER_USER = 1 * 1024 * 1024; // 1 MB
 
+// Legacy assessment essays. New lessons live in rolling profiles (see
+// assessments.ts); this field is only preserved until the one-time migration
+// archives and clears it.
 interface AssessmentRecord {
   text: string;
   sessionId: string;
@@ -13,9 +16,14 @@ interface AssessmentRecord {
   timestamp: string;
 }
 
+interface PairEntry {
+  messages: string[];
+  stats?: UserStats;
+}
+
 interface Store {
   users:       Record<string, UserProfile>;
-  pairs:       Record<string, { messages: string[] }>;
+  pairs:       Record<string, PairEntry>;
   counter:     number;
   nextId:      number;
   assessments: { list: AssessmentRecord[] };
@@ -55,9 +63,8 @@ function loadStore(): Store {
       return migrated;
     }
     const store = raw as Store;
-    const before = store.assessments.list.length;
-    store.assessments.list = store.assessments.list.filter(r => r.imitateeId != null);
-    if (store.assessments.list.length !== before) saveStore(store);
+    store.assessments ??= { list: [] };
+    store.assessments.list ??= [];
     return store;
   } catch { return { ...EMPTY_STORE, users: {}, pairs: {}, assessments: { list: [] } }; }
 }
@@ -187,67 +194,6 @@ export function setName(userId: UserId, name: string): void {
   saveStore(store);
 }
 
-export function appendAssessment(
-  assessment: string,
-  meta: { sessionId: string; guessNumber: number; imitateeId: UserId; correct: boolean }
-): void {
-  const store = loadStore();
-  store.assessments.list.push({ text: assessment, timestamp: new Date().toISOString(), ...meta });
-  saveStore(store);
-}
-
-export function getAssessmentsForWitness(imitateeId: UserId): AssessmentRecord[] {
-  return loadStore().assessments.list.filter(r => r.imitateeId === imitateeId);
-}
-
-export function replaceWitnessAssessments(imitateeId: UserId, summary: string): void {
-  const store = loadStore();
-  store.assessments.list = store.assessments.list.filter(r => r.imitateeId !== imitateeId);
-  store.assessments.list.push({
-    text: summary,
-    sessionId: '',
-    guessNumber: 0,
-    imitateeId,
-    correct: false,
-    timestamp: new Date().toISOString(),
-  });
-  saveStore(store);
-}
-
-// Returns all assessment texts (used by compact.ts).
-export function getAllAssessments(): string[] {
-  return loadStore().assessments.list.map(r => r.text);
-}
-
-// Returns assessments with imitatee metadata for labeled display in the system prompt.
-export function getAssessmentsWithMeta(): Array<{ text: string; imitateeId: UserId }> {
-  return loadStore().assessments.list.map(r => ({ text: r.text, imitateeId: r.imitateeId }));
-}
-
-// Returns the most recent assessment for a given session, or undefined if none.
-export function getLatestAssessmentForSession(sessionId: string): string | undefined {
-  const list = loadStore().assessments.list;
-  for (let i = list.length - 1; i >= 0; i--) {
-    if (list[i].sessionId === sessionId) return list[i].text;
-  }
-  return undefined;
-}
-
-export function setAssessments(list: string[]): void {
-  const store = loadStore();
-  // Compacted entries are general lessons (imitateeId=0).
-  store.assessments.list = list.map(text => ({
-    text,
-    sessionId: '',
-    guessNumber: 0,
-    guesserId: 0,
-    imitateeId: 0,
-    correct: false,
-    timestamp: new Date().toISOString(),
-  }));
-  saveStore(store);
-}
-
 // --- WebSocket authentication ---
 
 export function createAnonymousUser(): UserId {
@@ -285,4 +231,59 @@ export function appendMessage(userId: UserId, partnerId: UserId, message: string
   }
   store.pairs[key] = { messages: msgs };
   saveStore(store);
+}
+
+export function recordRoundResult(user1: UserId, user2: UserId, won: boolean, currentStreak: number): void {
+  const store = loadStore();
+  const key = `${Math.min(user1, user2)}:${Math.max(user1, user2)}`;
+  const prev: UserStats = store.pairs[key]?.stats ?? { wins: 0, losses: 0, bestStreak: 0 };
+  store.pairs[key] = {
+    ...(store.pairs[key] ?? { messages: [] }),
+    stats: {
+      wins:       prev.wins       + (won ? 1 : 0),
+      losses:     prev.losses     + (won ? 0 : 1),
+      bestStreak: Math.max(prev.bestStreak, won ? currentStreak : 0),
+    },
+  };
+  saveStore(store);
+}
+
+export interface LeaderboardEntry {
+  name: string;
+  wins: number;
+  losses: number;
+  bestStreak: number;
+}
+
+export function getLeaderboard(limit = 10): LeaderboardEntry[] {
+  const store = loadStore();
+  const entries: LeaderboardEntry[] = [];
+
+  for (const [key, pair] of Object.entries(store.pairs)) {
+    const s = pair.stats;
+    if (!s || s.wins + s.losses === 0) continue;
+    const [id1, id2] = key.split(':').map(Number);
+    const name1 = store.users[id1]?.name ?? store.users[id1.toString()]?.name ?? `user${id1}`;
+    const name2 = store.users[id2]?.name ?? store.users[id2.toString()]?.name ?? `user${id2}`;
+    entries.push({ name: `${name1} & ${name2}`, wins: s.wins, losses: s.losses, bestStreak: s.bestStreak });
+  }
+
+  // Sort: non-perfect by win% desc; perfect (100%) only rank above an entry if their wins > that entry's wins
+  const perfect   = entries.filter(e => e.losses === 0).sort((a, b) => b.wins - a.wins);
+  const imperfect = entries.filter(e => e.losses  > 0).sort((a, b) =>
+    (b.wins / (b.wins + b.losses)) - (a.wins / (a.wins + a.losses))
+  );
+
+  const result: LeaderboardEntry[] = [];
+  let pi = 0, ii = 0;
+  while (pi < perfect.length || ii < imperfect.length) {
+    const p = perfect[pi];
+    const imp = imperfect[ii];
+    if (!imp)              { result.push(p!);  pi++; }
+    else if (!p)           { result.push(imp); ii++; }
+    else if (p.wins > imp.wins) { result.push(p);   pi++; }
+    else                   { result.push(imp); ii++; }
+  }
+
+  return result.slice(0, limit);
 }

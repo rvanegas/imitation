@@ -150,6 +150,9 @@ Game commands (issued as the active user):
           case 'help':
             await engine.handleHelp(userId, transport);
             break;
+          case 'leaderboard':
+            await engine.handleLeaderboard(userId, transport);
+            break;
           default:
             console.log(`Unknown command: /${cmd}  (try :help)`);
         }

@@ -1,13 +1,16 @@
 import { GameSession, UserId } from './types';
 import { Transport } from './transport';
 import * as session from './session';
-import { generatePrediction, generateAssessment, buildCachedBlock, checkMessageFairness, compactWitnessAssessments } from './imitation';
+import { generatePrediction, generateAssessment, buildCachedBlock, checkMessageFairness } from './imitation';
 import {
   getProfile, appendMessage, getName, getOrAssignName, setName,
-  isValidName, getUserIdByName, appendAssessment, getAssessmentsWithMeta,
-  getLatestAssessmentForSession, touchUserSession,
-  getAssessmentsForWitness, replaceWitnessAssessments,
+  isValidName, getUserIdByName, touchUserSession,
+  recordRoundResult, getLeaderboard,
 } from './userProfiles';
+import {
+  getGeneralAssessment, getUserAssessment, parseTaggedAssessment,
+  appendAndSynthesizeGeneralAssessment, appendAndSynthesizeUserAssessment,
+} from './assessments';
 import {
   deliverToSender, deliverToReceiver, deliverToSpectators,
   deliverRoundResultToSpectators,
@@ -19,58 +22,24 @@ function hasPlayers(s: GameSession): s is GameSession & { user1: UserId; user2: 
   return s.user1 !== null && s.user2 !== null;
 }
 
-// Called when a game becomes active (join or restart) to snapshot baseline state for prompt caching.
+// Called when a game becomes active (join or restart) to build the cached
+// system-prompt blocks from current profiles. Profiles updated during the game
+// take effect at the next game's rebuild.
 function initGameCache(s: GameSession & { user1: UserId; user2: UserId }): void {
-  const user1Profile = getProfile(s.user1, s.user2);
-  const user2Profile = getProfile(s.user2, s.user1);
-  const allAssessments = getAssessmentsWithMeta();
-  s.baseUser1MsgCount = user1Profile.messages.length;
-  s.baseUser2MsgCount = user2Profile.messages.length;
-  s.baseAssessmentCount = allAssessments.length;
   s.cachedSystemPromptBlock = buildCachedBlock(
     {
-      user1: { id: s.user1, name: getName(s.user1) ?? 'user1', messages: user1Profile.messages },
-      user2: { id: s.user2, name: getName(s.user2) ?? 'user2', messages: user2Profile.messages },
+      user1: { id: s.user1, name: getName(s.user1) ?? 'user1', messages: getProfile(s.user1, s.user2).messages },
+      user2: { id: s.user2, name: getName(s.user2) ?? 'user2', messages: getProfile(s.user2, s.user1).messages },
     },
-    allAssessments,
+    getGeneralAssessment(),
+    { user1: getUserAssessment(s.user1), user2: getUserAssessment(s.user2) },
   );
 }
 
-// Lazily rebuilds cachedSystemPromptBlock after a server restart using persisted base counts.
+// Lazily rebuilds cachedSystemPromptBlock after a server restart.
 function ensureGameCache(s: GameSession & { user1: UserId; user2: UserId }): void {
   if (s.cachedSystemPromptBlock) return;
-  const base1 = s.baseUser1MsgCount ?? 0;
-  const base2 = s.baseUser2MsgCount ?? 0;
-  const baseA = s.baseAssessmentCount ?? 0;
-  s.cachedSystemPromptBlock = buildCachedBlock(
-    {
-      user1: { id: s.user1, name: getName(s.user1) ?? 'user1', messages: getProfile(s.user1, s.user2).messages.slice(0, base1) },
-      user2: { id: s.user2, name: getName(s.user2) ?? 'user2', messages: getProfile(s.user2, s.user1).messages.slice(0, base2) },
-    },
-    getAssessmentsWithMeta().slice(0, baseA),
-  );
-}
-
-function getDeltas(s: GameSession & { user1: UserId; user2: UserId }) {
-  return {
-    deltaMessages: {
-      user1: getProfile(s.user1, s.user2).messages.slice(s.baseUser1MsgCount ?? 0),
-      user2: getProfile(s.user2, s.user1).messages.slice(s.baseUser2MsgCount ?? 0),
-    },
-    deltaAssessments: getAssessmentsWithMeta().slice(s.baseAssessmentCount ?? 0),
-  };
-}
-
-const COMPACT_THRESHOLD = 20;
-
-function maybeCompactWitness(imitateeId: UserId, sessionId: string): void {
-  const records = getAssessmentsForWitness(imitateeId);
-  if (records.length <= COMPACT_THRESHOLD) return;
-  const witnessName = getName(imitateeId) ?? String(imitateeId);
-  const texts = records.map(r => r.text);
-  compactWitnessAssessments(texts, witnessName, sessionId)
-    .then(summary => replaceWitnessAssessments(imitateeId, summary))
-    .catch(() => {});
+  initGameCache(s);
 }
 
 // Human score = h/total * 2 - 1  (ranges –1 to +1; 0 = random chance)
@@ -120,6 +89,7 @@ export const HELP_TEXT =
   '/leave — Leave the current session\n' +
   '/restart <user1> <user2> — Restart the game with two players from the session\n' +
   '/setname <name> — Set your display name\n' +
+  '/leaderboard — Show the top 10 players by wins\n' +
   '/help — Show this message';
 
 export async function handleStart(
@@ -188,6 +158,7 @@ export async function handleJoin(
     await transport.send(joined.user2!, HELP_TEXT);
     await transport.send(joined.user1!, 'Game started! You are the judge — take the first turn.');
     await transport.send(joined.user2!, 'Game started! Your partner is the judge. Wait for their first turn.');
+    await Promise.all([joined.user1!, joined.user2!].map(id => handleLeaderboard(id, transport)));
     return;
   }
 
@@ -211,6 +182,20 @@ export async function handleHelp(userId: UserId, transport: Transport): Promise<
   await transport.send(userId, HELP_TEXT);
 }
 
+export async function handleLeaderboard(userId: UserId, transport: Transport): Promise<void> {
+  const entries = getLeaderboard(10);
+  if (entries.length === 0) {
+    await transport.send(userId, 'No leaderboard data yet — play some rounds first!');
+    return;
+  }
+  const lines: string[] = ['Leaderboard — Top players\n'];
+  entries.forEach((e, i) => {
+    const total = e.wins + e.losses;
+    const pct = total > 0 ? Math.round((e.wins / total) * 100) : 0;
+    lines.push(`${i + 1}. ${e.name}  W:${e.wins} L:${e.losses} (${pct}%)  Streak: ${e.bestStreak}`);
+  });
+  await transport.send(userId, lines.join('\n'));
+}
 
 export async function handleSetName(userId: UserId, name: string, transport: Transport): Promise<void> {
   if (!isValidName(name)) {
@@ -235,7 +220,7 @@ export async function handleReflection(userId: UserId, transport: Transport): Pr
     await transport.send(userId, 'No active session.');
     return;
   }
-  const assessment = getLatestAssessmentForSession(s.id);
+  const assessment = s.lastAssessment;
   if (!assessment) {
     await transport.send(userId, 'No reflection available yet — complete a round first.');
     return;
@@ -420,6 +405,8 @@ export async function handleHuman(userId: UserId, call: string, transport: Trans
     s.teamScores.model += 1;
     s.winStreak = 0;
   }
+  const streakForStats = correct ? s.winStreak : 0;
+  if (s.user1 !== null && s.user2 !== null) recordRoundResult(s.user1, s.user2, correct, streakForStats);
   s.totalTurns += s.currentRoundTurns;
   s.roundCount += 1;
   const verdict = correct ? 'Correct! Humans point' : 'Wrong! Model point';
@@ -433,15 +420,16 @@ export async function handleHuman(userId: UserId, call: string, transport: Trans
   if (modelEntry?.role === 'model' && humanEntry) {
     const imitateeId = humanEntry.role === 'user1' ? s.user1 : s.user2;
     const witnessRole = humanEntry.role as 'user1' | 'user2';
-    const meta = { sessionId: s.id, guessNumber: s.transcript.filter(e => e.role === 'guess').length, imitateeId, correct }; // 'guess' role is internal/persisted
     ensureGameCache(s);
-    const { deltaMessages, deltaAssessments } = getDeltas(s);
     generateAssessment(s.transcript.slice(0, -3), humanEntry.content, modelEntry.content, correct, {
       user1: { id: s.user1, name: getName(s.user1) ?? 'user1' },
       user2: { id: s.user2, name: getName(s.user2) ?? 'user2' },
-    }, witnessRole, s.cachedSystemPromptBlock!, deltaMessages, deltaAssessments, s.id).then(assessment => {
-      appendAssessment(assessment, meta);
-      maybeCompactWitness(imitateeId, s.id);
+    }, witnessRole, s.cachedSystemPromptBlock!, s.id).then(async assessment => {
+      s.lastAssessment = assessment;
+      saveState(s);
+      const { general, userSpecific } = parseTaggedAssessment(assessment);
+      if (general) await appendAndSynthesizeGeneralAssessment(general, s.id);
+      if (userSpecific) await appendAndSynthesizeUserAssessment(imitateeId, userSpecific, s.id);
     }).catch(() => {});
   }
 
@@ -534,7 +522,6 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
     }
     const witnessRole = witnessId === s.user1 ? 'user1' : 'user2';
     ensureGameCache(s);
-    const { deltaMessages: wDeltaMessages, deltaAssessments: wDeltaAssessments } = getDeltas(s);
     const { text: predText, systemPrompt: sp } = await generatePrediction(
       s.transcript,
       witnessRole,
@@ -543,8 +530,6 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
         user2: { id: s.user2, name: getName(s.user2) ?? 'user2' },
       },
       s.cachedSystemPromptBlock!,
-      wDeltaMessages,
-      wDeltaAssessments,
       stripped,
       s.id,
       s.imitationFirst,

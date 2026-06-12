@@ -53,7 +53,8 @@ export function setupTelegram(transport: Transport): Telegraf {
     }
   });
 
-  bot.command('help',    async (ctx) => engine.handleHelp(uid(ctx), tgTransport));
+  bot.command('help',        async (ctx) => engine.handleHelp(uid(ctx), tgTransport));
+  bot.command('leaderboard', async (ctx) => engine.handleLeaderboard(uid(ctx), tgTransport));
   bot.command('link', async (ctx) => {
     const token = createLinkToken(uid(ctx));
     await ctx.reply(

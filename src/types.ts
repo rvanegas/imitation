@@ -35,11 +35,8 @@ export interface GameSession {
   roundCount: number;                  // original: number of rounds completed
   spectators: UserId[];
   lastSystemPrompt?: string;
-  // Persisted — baseline snapshot counts captured at game start; used to reconstruct cachedSystemPromptBlock after restart
-  baseUser1MsgCount?: number;
-  baseUser2MsgCount?: number;
-  baseAssessmentCount?: number;
-  // Transient — not persisted; rebuilt lazily after restart using base counts above
+  lastAssessment?: string;        // most recent post-round reflection (for /reflection)
+  // Transient — not persisted; rebuilt lazily after restart from current profiles
   cachedSystemPromptBlock?: SystemPromptBlock[];
   createdAt: number;
   lastActivity: number;
@@ -48,6 +45,12 @@ export interface GameSession {
 export interface MessagePair {
   human: string;      // sender's actual message
   prediction: string; // model's blind prediction of what sender would write
+}
+
+export interface UserStats {
+  wins: number;        // rounds where humans won while this user was playing
+  losses: number;      // rounds where model won while this user was playing
+  bestStreak: number;  // all-time best consecutive-win streak
 }
 
 export interface UserProfile {
