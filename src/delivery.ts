@@ -1,4 +1,5 @@
 import { Transport } from './transport';
+import { ScoreInfo } from './events';
 import { GameSession, MessagePair, UserId } from './types';
 
 async function sendToSpectators(transport: Transport, session: GameSession, text: string): Promise<void> {
@@ -32,13 +33,17 @@ export async function deliverToReceiver(
   receiverId: UserId,
   pair: MessagePair,
   imitationFirst: boolean,
+  score: ScoreInfo,
 ): Promise<void> {
   const [msgA, msgB] = imitationFirst
     ? [pair.prediction, pair.human]
     : [pair.human, pair.prediction];
 
-  await transport.send(receiverId, `A: ${msgA}`);
-  await transport.send(receiverId, `B: ${msgB}`);
+  // Text clients get two lines (A:/B:); the app gets a single structured
+  // `decide` event carrying both cards. The combined text is the fallback.
+  await transport.send(receiverId, `A: ${msgA}\nB: ${msgB}`, {
+    kind: 'decide', role: 'judge', phase: 'judge-decide', a: msgA, b: msgB, score,
+  });
 }
 
 export async function deliverToSpectators(

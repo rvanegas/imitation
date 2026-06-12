@@ -1,5 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { Transport } from './transport';
+import { GameEvent } from './events';
 import { UserId } from './types';
 import { getName, getOrAssignName, createAnonymousUser, setWsToken, getUserIdByWsToken } from './userProfiles';
 import { isValidSessionToken } from './session';
@@ -21,10 +22,11 @@ export class WebSocketTransport implements Transport {
     return ws?.readyState === WebSocket.OPEN;
   }
 
-  async send(userId: UserId, text: string): Promise<void> {
+  async send(userId: UserId, text: string, event?: GameEvent): Promise<void> {
     const ws = this.sockets.get(userId);
     if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'msg', text }));
+      const frame = event ? { type: 'event', event, text } : { type: 'msg', text };
+      ws.send(JSON.stringify(frame));
     }
   }
 

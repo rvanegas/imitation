@@ -38,21 +38,30 @@ function makeSession(overrides: Partial<GameSession> = {}): GameSession {
   };
 }
 
+const SCORE = {
+  humans: 0, model: 0, humanPct: 0, modelPct: 0,
+  streak: 0, bestStreak: 0, round: 0, avgTurns: null,
+};
+
 describe('deliverToReceiver', () => {
   it('imitationFirst=true puts prediction as A, human as B', async () => {
     const transport = new MockTransport();
-    await deliverToReceiver(transport, 1, { human: 'human text', prediction: 'pred text' }, true);
-    const msgs = transport.getMessages(1);
-    expect(msgs.find(m => m.startsWith('A:'))).toContain('pred text');
-    expect(msgs.find(m => m.startsWith('B:'))).toContain('human text');
+    await deliverToReceiver(transport, 1, { human: 'human text', prediction: 'pred text' }, true, SCORE);
+    const text = transport.lastMessage(1)!;
+    expect(text).toMatch(/A:.*pred text/);
+    expect(text).toMatch(/B:.*human text/);
+    const ev = transport.getEvents(1)[0];
+    expect(ev).toMatchObject({ kind: 'decide', a: 'pred text', b: 'human text' });
   });
 
   it('imitationFirst=false puts human as A, prediction as B', async () => {
     const transport = new MockTransport();
-    await deliverToReceiver(transport, 1, { human: 'human text', prediction: 'pred text' }, false);
-    const msgs = transport.getMessages(1);
-    expect(msgs.find(m => m.startsWith('A:'))).toContain('human text');
-    expect(msgs.find(m => m.startsWith('B:'))).toContain('pred text');
+    await deliverToReceiver(transport, 1, { human: 'human text', prediction: 'pred text' }, false, SCORE);
+    const text = transport.lastMessage(1)!;
+    expect(text).toMatch(/A:.*human text/);
+    expect(text).toMatch(/B:.*pred text/);
+    const ev = transport.getEvents(1)[0];
+    expect(ev).toMatchObject({ kind: 'decide', a: 'human text', b: 'pred text' });
   });
 });
 

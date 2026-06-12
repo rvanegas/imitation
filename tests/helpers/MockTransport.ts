@@ -1,12 +1,22 @@
 import { Transport } from '../../src/transport';
+import { GameEvent } from '../../src/events';
 import { UserId } from '../../src/types';
 
 export class MockTransport implements Transport {
   private messages = new Map<UserId, string[]>();
+  private events = new Map<UserId, GameEvent[]>();
 
-  async send(userId: UserId, text: string): Promise<void> {
+  async send(userId: UserId, text: string, event?: GameEvent): Promise<void> {
     if (!this.messages.has(userId)) this.messages.set(userId, []);
     this.messages.get(userId)!.push(text);
+    if (event) {
+      if (!this.events.has(userId)) this.events.set(userId, []);
+      this.events.get(userId)!.push(event);
+    }
+  }
+
+  getEvents(userId: UserId): GameEvent[] {
+    return this.events.get(userId) ?? [];
   }
 
   makeInviteLink(token: string, _userId?: UserId): string {

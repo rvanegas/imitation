@@ -6,9 +6,58 @@ export const SERVER_URL: string =
   (Constants.expoConfig?.extra?.serverUrl as string | undefined) ?? 'ws://localhost:8080';
 // export const SERVER_URL = 'ws://192.168.7.150:8080'; // update to your server's address
 
+// --- Structured game-event protocol -----------------------------------------
+// Mirror of src/events.ts on the server. Keep the two in sync when either side
+// changes. Events arrive in `{ type: 'event', event, text }` frames; `text` is
+// the same plain-text fallback the text clients render.
+
+export type Role = 'judge' | 'witness';
+export type Label = 'A' | 'B';
+
+export type Phase =
+  | 'lobby'
+  | 'judge-ask'
+  | 'judge-wait'
+  | 'judge-decide'
+  | 'witness-wait'
+  | 'witness-answer'
+  | 'reveal';
+
+export interface ScoreInfo {
+  humans: number;
+  model: number;
+  humanPct: number;
+  modelPct: number;
+  streak: number;
+  bestStreak: number;
+  round: number;
+  avgTurns: number | null;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  name: string;
+  wins: number;
+  losses: number;
+  pct: number;
+  bestStreak: number;
+}
+
+export type GameEvent =
+  | { kind: 'invite'; link: string }
+  | { kind: 'gameStart'; role: Role; phase: Phase; you: string; partner: string; score: ScoreInfo; restarted: boolean }
+  | { kind: 'question'; role: 'witness'; phase: 'witness-answer'; text: string; score: ScoreInfo }
+  | { kind: 'questionSent'; role: 'judge'; phase: 'judge-wait'; text: string; score: ScoreInfo }
+  | { kind: 'pair'; role: 'witness'; phase: 'witness-wait'; yourText: string; yourLabel: Label; modelText: string; modelLabel: Label; score: ScoreInfo }
+  | { kind: 'decide'; role: 'judge'; phase: 'judge-decide'; a: string; b: string; score: ScoreInfo }
+  | { kind: 'reveal'; phase: 'reveal'; correct: boolean; humanLabel: Label; aText: string; bText: string; call: Label; self: boolean; score: ScoreInfo; nextRole: Role }
+  | { kind: 'status'; role: Role | null; phase: Phase; score: ScoreInfo; players: string[]; judge: string; spectators: number }
+  | { kind: 'leaderboard'; entries: LeaderboardEntry[] };
+
 export type ServerMessage =
   | { type: 'ready';      name: string; token?: string }
   | { type: 'msg';        text: string }
+  | { type: 'event';      event: GameEvent; text: string }
   | { type: 'nameUpdate'; name: string }
   | { type: 'error';      text: string };
 

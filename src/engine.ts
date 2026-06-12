@@ -17,6 +17,7 @@ import {
 } from './delivery';
 import { logSession, updateLog } from './log';
 import { diagNoSession } from './diag';
+import { buildScore, GameEvent, Label, LeaderboardEntry, Phase, Role } from './events';
 
 function hasPlayers(s: GameSession): s is GameSession & { user1: UserId; user2: UserId } {
   return s.user1 !== null && s.user2 !== null;
@@ -61,6 +62,56 @@ function formatOriginalScores(s: GameSession): string {
 function formatOriginalScoreStr(s: GameSession): string {
   const avgTurns = s.roundCount > 0 ? (s.totalTurns / s.roundCount).toFixed(1) : '—';
   return `${formatOriginalScores(s)} | Avg turns: ${avgTurns}`;
+}
+
+// Build a per-player gameStart event (used on join and restart).
+function gameStartEvent(
+  s: GameSession & { user1: UserId; user2: UserId },
+  userId: UserId,
+  restarted: boolean,
+): Extract<GameEvent, { kind: 'gameStart' }> {
+  const isJudge = s.interrogator === userId;
+  const partnerId = isJudge ? session.getPartner(s, userId)! : s.interrogator;
+  return {
+    kind: 'gameStart',
+    role: isJudge ? 'judge' : 'witness',
+    phase: isJudge ? 'judge-ask' : 'witness-wait',
+    you: getName(userId) ?? 'you',
+    partner: getName(partnerId) ?? 'partner',
+    score: buildScore(s),
+    restarted,
+  };
+}
+
+// Derive a player's current role and phase from session state. The judge's
+// "quiet" phase (pendingResponder === null) is either judge-ask at the top of a
+// round or judge-decide once the witness has answered (last entry is the model's
+// prediction, awaiting the call).
+function roundPhase(s: GameSession, userId: UserId): { role: Role; phase: Phase } {
+  const isJudge = userId === s.interrogator;
+  const role: Role = isJudge ? 'judge' : 'witness';
+  if (s.pendingResponder !== null) {
+    return { role, phase: isJudge ? 'judge-wait' : 'witness-answer' };
+  }
+  const last = s.transcript[s.transcript.length - 1];
+  if (last?.role === 'model') {
+    return { role, phase: isJudge ? 'judge-decide' : 'witness-wait' };
+  }
+  return { role, phase: isJudge ? 'judge-ask' : 'witness-wait' };
+}
+
+function leaderboardEntries(limit: number): LeaderboardEntry[] {
+  return getLeaderboard(limit).map((e, i) => {
+    const total = e.wins + e.losses;
+    return {
+      rank: i + 1,
+      name: e.name,
+      wins: e.wins,
+      losses: e.losses,
+      pct: total > 0 ? Math.round((e.wins / total) * 100) : 0,
+      bestStreak: e.bestStreak,
+    };
+  });
 }
 
 function stripEmoji(text: string): string {
@@ -120,6 +171,7 @@ export async function handleStart(
   await transport.send(
     userId,
     `Share this link — the first to join becomes player 2; everyone else watches:\n${link}`,
+    { kind: 'invite', link },
   );
 }
 
@@ -155,9 +207,18 @@ export async function handleJoin(
     touchUserSession(joined.user1!);
     initGameCache(joined as GameSession & { user1: UserId; user2: UserId });
     session.persistSessions();
+    const active = joined as GameSession & { user1: UserId; user2: UserId };
     await transport.send(joined.user2!, HELP_TEXT);
-    await transport.send(joined.user1!, 'Game started! You are the judge — take the first turn.');
-    await transport.send(joined.user2!, 'Game started! Your partner is the judge. Wait for their first turn.');
+    await transport.send(
+      joined.user1!,
+      'Game started! You are the judge — take the first turn.',
+      gameStartEvent(active, joined.user1!, false),
+    );
+    await transport.send(
+      joined.user2!,
+      'Game started! Your partner is the judge. Wait for their first turn.',
+      gameStartEvent(active, joined.user2!, false),
+    );
     await Promise.all([joined.user1!, joined.user2!].map(id => handleLeaderboard(id, transport)));
     return;
   }
@@ -188,13 +249,12 @@ export async function handleLeaderboard(userId: UserId, transport: Transport): P
     await transport.send(userId, 'No leaderboard data yet — play some rounds first!');
     return;
   }
+  const structured = leaderboardEntries(10);
   const lines: string[] = ['Leaderboard — Top players\n'];
-  entries.forEach((e, i) => {
-    const total = e.wins + e.losses;
-    const pct = total > 0 ? Math.round((e.wins / total) * 100) : 0;
-    lines.push(`${i + 1}. ${e.name}  W:${e.wins} L:${e.losses} (${pct}%)  Streak: ${e.bestStreak}`);
+  structured.forEach(e => {
+    lines.push(`${e.rank}. ${e.name}  W:${e.wins} L:${e.losses} (${e.pct}%)  Streak: ${e.bestStreak}`);
   });
-  await transport.send(userId, lines.join('\n'));
+  await transport.send(userId, lines.join('\n'), { kind: 'leaderboard', entries: structured });
 }
 
 export async function handleSetName(userId: UserId, name: string, transport: Transport): Promise<void> {
@@ -235,7 +295,11 @@ export async function handleInvite(userId: UserId, transport: Transport): Promis
     return;
   }
   const link = transport.makeInviteLink(s.id, userId);
-  await transport.send(userId, `Share this link — the first to join becomes player 2; everyone else watches as a spectator:\n${link}`);
+  await transport.send(
+    userId,
+    `Share this link — the first to join becomes player 2; everyone else watches as a spectator:\n${link}`,
+    { kind: 'invite', link },
+  );
 }
 
 export async function handleStatus(userId: UserId, transport: Transport): Promise<void> {
@@ -286,7 +350,20 @@ export async function handleStatus(userId: UserId, transport: Transport): Promis
 
   const playersLine = `Players: ${name1}, ${name2}`;
 
-  await transport.send(userId, `${playersLine}\n${judgeLine}\n${turnLine}\n${scoreLine}\n${spectatorLine}`);
+  const { role, phase } = isSpectator
+    ? { role: null as Role | null, phase: 'lobby' as Phase }
+    : roundPhase(s, userId);
+  const statusEvent: GameEvent = {
+    kind: 'status',
+    role,
+    phase,
+    score: buildScore(s),
+    players: [name1, name2],
+    judge: judgeName,
+    spectators: s.spectators.length,
+  };
+
+  await transport.send(userId, `${playersLine}\n${judgeLine}\n${turnLine}\n${scoreLine}\n${spectatorLine}`, statusEvent);
 }
 
 export async function handleRestart(
@@ -322,8 +399,9 @@ export async function handleRestart(
   const msg1 = 'Game restarted! You are the judge — take the first turn.';
   const msg2 = 'Game restarted! Your partner is the judge. Wait for their first turn.';
 
-  await transport.send(s.user1!, msg1);
-  await transport.send(s.user2!, msg2);
+  const active = s as GameSession & { user1: UserId; user2: UserId };
+  await transport.send(s.user1!, msg1, gameStartEvent(active, s.user1!, true));
+  await transport.send(s.user2!, msg2, gameStartEvent(active, s.user2!, true));
   await Promise.all(s.spectators.map(id => transport.send(id, 'Game restarted with new players.')));
 }
 
@@ -434,18 +512,39 @@ export async function handleHuman(userId: UserId, call: string, transport: Trans
   }
 
   await deliverRoundResultToSpectators(transport, s, callerLabel, correct, reveal, scoreStr);
+
+  // Capture the round's card layout BEFORE reshuffle flips imitationFirst.
+  const humanText = humanEntry?.content ?? '';
+  const modelText = modelEntry?.content ?? '';
+  const aText = humanIsA ? humanText : modelText;
+  const bText = humanIsA ? modelText : humanText;
+  const humanLabel: Label = humanIsA ? 'A' : 'B';
+
   session.reshuffle(s);
 
   const youAreNewJudge = s.interrogator === userId;
+  const finalScore = buildScore(s);
+  const revealBase = {
+    kind: 'reveal' as const,
+    phase: 'reveal' as const,
+    correct,
+    humanLabel,
+    aText,
+    bText,
+    call: g as Label,
+    score: finalScore,
+  };
   await transport.send(
     userId,
     `${verdict} ${reveal}\n${scoreStr}\n\n` +
     (youAreNewJudge ? 'You are the judge — take the first turn.' : 'Your partner is the judge now. Wait for their first turn.'),
+    { ...revealBase, self: true, nextRole: youAreNewJudge ? 'judge' : 'witness' },
   );
   await transport.send(
     partnerId,
     `Your partner called ${correct ? 'correctly' : 'incorrectly'}. ${reveal}\n${scoreStr}\n\n` +
     (!youAreNewJudge ? 'You are the judge — take the first turn.' : 'Your partner is the judge now. Wait for their first turn.'),
+    { ...revealBase, self: false, nextRole: youAreNewJudge ? 'witness' : 'judge' },
   );
 }
 
@@ -501,10 +600,19 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
       s.currentRoundTurns += 1;
       saveState(s);
 
-      const myLabel = s.imitationFirst ? 'B' : 'A';
-      const modelLabel = s.imitationFirst ? 'A' : 'B';
-      await transport.send(userId, `You (${myLabel}): ${stripped}\nModel (${modelLabel}): ${prediction}`);
-      await deliverToReceiver(transport, s.interrogator, { human: stripped, prediction }, s.imitationFirst);
+      const myLabel: Label = s.imitationFirst ? 'B' : 'A';
+      const modelLabel: Label = s.imitationFirst ? 'A' : 'B';
+      const witnessScore = buildScore(s);
+      await transport.send(
+        userId,
+        `You (${myLabel}): ${stripped}\nModel (${modelLabel}): ${prediction}`,
+        {
+          kind: 'pair', role: 'witness', phase: 'witness-wait',
+          yourText: stripped, yourLabel: myLabel, modelText: prediction, modelLabel,
+          score: witnessScore,
+        },
+      );
+      await deliverToReceiver(transport, s.interrogator, { human: stripped, prediction }, s.imitationFirst, buildScore(s));
       const witnessLabel = getName(witnessId)!;
       await deliverToSpectators(transport, s, witnessLabel, stripped, prediction);
       return;
@@ -545,7 +653,15 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
     saveState(s);
     appendMessage(s.interrogator, witnessId, stripped);
 
-    await transport.send(witnessId, stripped);
+    const askScore = buildScore(s);
+    await transport.send(witnessId, stripped, {
+      kind: 'question', role: 'witness', phase: 'witness-answer', text: stripped, score: askScore,
+    });
+    // Event-only signal so the app moves the judge into a "waiting" state. Empty
+    // fallback text → text clients (Telegram/terminal) send nothing here.
+    await transport.send(s.interrogator, '', {
+      kind: 'questionSent', role: 'judge', phase: 'judge-wait', text: stripped, score: askScore,
+    });
 
     if (s.spectators.length > 0) {
       const judgeLabel = getName(s.interrogator)!;

@@ -1,6 +1,7 @@
 import * as net from 'net';
 import * as fs from 'fs';
 import { Transport } from './transport';
+import { GameEvent } from './events';
 import { UserId } from './types';
 import * as engine from './engine';
 import { getName, getOrCreateUserIdByName, getTelegramId } from './userProfiles';
@@ -34,11 +35,13 @@ class CombinedTransport implements Transport {
     this.sockets.delete(userId);
   }
 
-  async send(userId: UserId, text: string): Promise<void> {
+  async send(userId: UserId, text: string, event?: GameEvent): Promise<void> {
     if (this.wsTransport.has(userId)) {
-      await this.wsTransport.send(userId, text);
+      await this.wsTransport.send(userId, text, event);
       return;
     }
+    // Text-only transports: skip event-only sends (empty fallback text).
+    if (!text) return;
     const socket = this.sockets.get(userId);
     if (socket?.writable) {
       socket.write(JSON.stringify({ type: 'msg', text }) + '\n');
