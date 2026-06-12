@@ -5,7 +5,7 @@ vi.mock('../src/imitation', () => ({
   generateAssessment: vi.fn().mockResolvedValue('mock assessment'),
   checkMessageFairness: vi.fn().mockResolvedValue({ fair: true, reason: '' }),
   buildCachedBlock: vi.fn().mockReturnValue([{ text: 'mock cached block', cache: true }]),
-  compactWitnessAssessments: vi.fn().mockResolvedValue('mock compacted'),
+  synthesizeProfile: vi.fn().mockResolvedValue('mock synthesized profile'),
 }));
 
 import { deliverToReceiver, deliverToSpectators } from '../src/delivery';
