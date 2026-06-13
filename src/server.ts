@@ -117,6 +117,7 @@ export function start(telegram: boolean): void {
         case 'setname': await engine.handleSetName(userId, args[0] ?? '', transport); break;
         case 'help':        await engine.handleHelp(userId, transport); break;
         case 'leaderboard': await engine.handleLeaderboard(userId, transport); break;
+        case 'resync':      await engine.handleResync(userId, transport); break;
         default:
           await transport.send(userId, `Unknown command: /${cmd}`);
       }
@@ -161,6 +162,7 @@ export function start(telegram: boolean): void {
         try {
           await dispatch(userId, text);
         } catch (err) {
+          console.error(`[socket dispatch] error handling "${text}" for user ${userId}:`, err);
           socket.write(JSON.stringify({ type: 'error', text: String(err) }) + '\n');
         }
       }

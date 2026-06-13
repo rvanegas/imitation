@@ -12,6 +12,7 @@ export interface TranscriptEntry {
   // Only present when role === 'guess'
   correct?: boolean;
   guesser?: 'user1' | 'user2';
+  humanLabel?: 'A' | 'B';  // which card was the human, for reveal reconstruction
 }
 
 export interface GameSession {

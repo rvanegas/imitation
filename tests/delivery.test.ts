@@ -8,7 +8,7 @@ vi.mock('../src/imitation', () => ({
   synthesizeProfile: vi.fn().mockResolvedValue('mock synthesized profile'),
 }));
 
-import { deliverToReceiver, deliverToSpectators } from '../src/delivery';
+import { deliverToSpectators } from '../src/delivery';
 import { MockTransport } from './helpers/MockTransport';
 import { GameSession } from '../src/types';
 
@@ -37,33 +37,6 @@ function makeSession(overrides: Partial<GameSession> = {}): GameSession {
     ...overrides,
   };
 }
-
-const SCORE = {
-  humans: 0, model: 0, humanPct: 0, modelPct: 0,
-  streak: 0, bestStreak: 0, round: 0, avgTurns: null,
-};
-
-describe('deliverToReceiver', () => {
-  it('imitationFirst=true puts prediction as A, human as B', async () => {
-    const transport = new MockTransport();
-    await deliverToReceiver(transport, 1, { human: 'human text', prediction: 'pred text' }, true, SCORE);
-    const text = transport.lastMessage(1)!;
-    expect(text).toMatch(/A:.*pred text/);
-    expect(text).toMatch(/B:.*human text/);
-    const ev = transport.getEvents(1)[0];
-    expect(ev).toMatchObject({ kind: 'decide', a: 'pred text', b: 'human text' });
-  });
-
-  it('imitationFirst=false puts human as A, prediction as B', async () => {
-    const transport = new MockTransport();
-    await deliverToReceiver(transport, 1, { human: 'human text', prediction: 'pred text' }, false, SCORE);
-    const text = transport.lastMessage(1)!;
-    expect(text).toMatch(/A:.*human text/);
-    expect(text).toMatch(/B:.*pred text/);
-    const ev = transport.getEvents(1)[0];
-    expect(ev).toMatchObject({ kind: 'decide', a: 'human text', b: 'pred text' });
-  });
-});
 
 describe('deliverToSpectators', () => {
   it('sends both sides with labels to each spectator', async () => {

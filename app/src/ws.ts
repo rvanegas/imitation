@@ -43,16 +43,45 @@ export interface LeaderboardEntry {
   bestStreak: number;
 }
 
+export interface RosterEntry {
+  name: string;
+  seated: boolean;
+}
+
+export interface SyncExchange {
+  question: string;
+  a?: string;
+  b?: string;
+  yourLabel?: Label;
+  modelLabel?: Label;
+}
+
+export interface RevealInfo {
+  correct: boolean;
+  humanLabel: Label;
+  aText: string;
+  bText: string;
+  call: Label;
+  self: boolean;
+  nextRole: Role;
+}
+
 export type GameEvent =
   | { kind: 'invite'; link: string }
-  | { kind: 'gameStart'; role: Role; phase: Phase; you: string; partner: string; score: ScoreInfo; restarted: boolean }
-  | { kind: 'question'; role: 'witness'; phase: 'witness-answer'; text: string; score: ScoreInfo }
-  | { kind: 'questionSent'; role: 'judge'; phase: 'judge-wait'; text: string; score: ScoreInfo }
-  | { kind: 'pair'; role: 'witness'; phase: 'witness-wait'; yourText: string; yourLabel: Label; modelText: string; modelLabel: Label; score: ScoreInfo }
-  | { kind: 'decide'; role: 'judge'; phase: 'judge-decide'; a: string; b: string; score: ScoreInfo }
-  | { kind: 'reveal'; phase: 'reveal'; correct: boolean; humanLabel: Label; aText: string; bText: string; call: Label; self: boolean; score: ScoreInfo; nextRole: Role }
-  | { kind: 'status'; role: Role | null; phase: Phase; score: ScoreInfo; players: string[]; judge: string; spectators: number }
-  | { kind: 'leaderboard'; entries: LeaderboardEntry[] };
+  | { kind: 'leaderboard'; entries: LeaderboardEntry[] }
+  // The authoritative snapshot — the app replaces its view with it.
+  | {
+      kind: 'sync';
+      role: Role | null;
+      phase: Phase;
+      score: ScoreInfo;
+      you: string;
+      partner: string;
+      exchanges: SyncExchange[];
+      roster: RosterEntry[];
+      waiting: boolean;
+      reveal: RevealInfo | null;
+    };
 
 export type ServerMessage =
   | { type: 'ready';      name: string; token?: string }

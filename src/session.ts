@@ -105,7 +105,9 @@ export function isOwnInvite(token: string, userId: UserId): boolean {
 
 export function acceptInvite(token: string, userId: UserId): GameSession | null {
   const s = sessions.get(token);
-  if (s === undefined || s.user2 !== null) return null;
+  // Reject full games (user2 set) and dead sessions whose creator already left
+  // (user1 null) — joining the latter would crash on a null id downstream.
+  if (s === undefined || s.user1 === null || s.user2 !== null) return null;
   if (s.user1 === userId) return null;
 
   s.user2 = userId;
@@ -118,7 +120,7 @@ export function acceptInvite(token: string, userId: UserId): GameSession | null 
 
 export function addSpectator(sessionId: string, userId: UserId): GameSession | null {
   const session = sessions.get(sessionId);
-  if (!session) return null;
+  if (!session) return null;  // a session with any participant (player or spectator) is joinable
   if (userId === session.user1 || userId === session.user2) return null;
   if (!session.spectators.includes(userId)) {
     session.spectators.push(userId);

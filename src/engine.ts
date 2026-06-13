@@ -11,13 +11,9 @@ import {
   getGeneralAssessment, getUserAssessment, parseTaggedAssessment,
   appendAndSynthesizeGeneralAssessment, appendAndSynthesizeUserAssessment,
 } from './assessments';
-import {
-  deliverToSender, deliverToReceiver, deliverToSpectators,
-  deliverRoundResultToSpectators,
-} from './delivery';
 import { logSession, updateLog } from './log';
 import { diagNoSession } from './diag';
-import { buildScore, GameEvent, Label, LeaderboardEntry, Phase, Role } from './events';
+import { buildScore, GameEvent, Label, LeaderboardEntry, Phase, Role, RosterEntry, SyncExchange } from './events';
 
 function hasPlayers(s: GameSession): s is GameSession & { user1: UserId; user2: UserId } {
   return s.user1 !== null && s.user2 !== null;
@@ -64,25 +60,6 @@ function formatOriginalScoreStr(s: GameSession): string {
   return `${formatOriginalScores(s)} | Avg turns: ${avgTurns}`;
 }
 
-// Build a per-player gameStart event (used on join and restart).
-function gameStartEvent(
-  s: GameSession & { user1: UserId; user2: UserId },
-  userId: UserId,
-  restarted: boolean,
-): Extract<GameEvent, { kind: 'gameStart' }> {
-  const isJudge = s.interrogator === userId;
-  const partnerId = isJudge ? session.getPartner(s, userId)! : s.interrogator;
-  return {
-    kind: 'gameStart',
-    role: isJudge ? 'judge' : 'witness',
-    phase: isJudge ? 'judge-ask' : 'witness-wait',
-    you: getName(userId) ?? 'you',
-    partner: getName(partnerId) ?? 'partner',
-    score: buildScore(s),
-    restarted,
-  };
-}
-
 // Derive a player's current role and phase from session state. The judge's
 // "quiet" phase (pendingResponder === null) is either judge-ask at the top of a
 // round or judge-decide once the witness has answered (last entry is the model's
@@ -98,6 +75,114 @@ function roundPhase(s: GameSession, userId: UserId): { role: Role; phase: Phase 
     return { role, phase: isJudge ? 'judge-decide' : 'witness-wait' };
   }
   return { role, phase: isJudge ? 'judge-ask' : 'witness-wait' };
+}
+
+// Present participants — seated players first, then spectators.
+function buildRoster(s: GameSession): RosterEntry[] {
+  const players = [s.user1, s.user2]
+    .filter((id): id is UserId => id !== null)
+    .map(id => ({ name: getName(id) ?? `user${id}`, seated: true }));
+  const specs = s.spectators.map(id => ({ name: getName(id) ?? `user${id}`, seated: false }));
+  return [...players, ...specs];
+}
+
+// The authoritative per-recipient snapshot, reconstructed purely from session
+// state (the transcript is the source of truth). The app replaces its view with
+// this, so replaying it any number of times converges to the same screen.
+function buildSync(s: GameSession, userId: UserId): Extract<GameEvent, { kind: 'sync' }> {
+  const waiting = s.user1 === null || s.user2 === null;
+  const isPlayer = userId === s.user1 || userId === s.user2;
+  const score = buildScore(s);
+  const roster = buildRoster(s);
+  const you = getName(userId) ?? 'you';
+
+  // Lobby / spectator / a seat is empty → no live round to show.
+  if (waiting || !isPlayer) {
+    const partnerId = isPlayer ? (userId === s.user1 ? s.user2 : s.user1) : null;
+    return {
+      kind: 'sync', role: null, phase: 'lobby', score, you,
+      partner: partnerId !== null ? (getName(partnerId) ?? 'partner') : '',
+      exchanges: [], roster, waiting, reveal: null,
+    };
+  }
+
+  const isJudge = userId === s.interrogator;
+  const role: Role = isJudge ? 'judge' : 'witness';
+  const partnerId = isJudge ? session.getPartner(s, userId)! : s.interrogator;
+  const interrogatorRole: 'user1' | 'user2' = s.interrogator === s.user1 ? 'user1' : 'user2';
+  const witnessRole: 'user1' | 'user2' = interrogatorRole === 'user1' ? 'user2' : 'user1';
+  const myRole: 'user1' | 'user2' = userId === s.user1 ? 'user1' : 'user2';
+  const base = { kind: 'sync' as const, role, score, you, partner: getName(partnerId) ?? 'partner', roster, waiting: false };
+
+  const t = s.transcript;
+  const last = t[t.length - 1];
+
+  // Reveal: the round just ended — its result is the last entry (the guess).
+  if (last?.role === 'guess') {
+    const humanLabel: Label = last.humanLabel ?? 'A';
+    const human = t[t.length - 3]?.content ?? '';
+    const model = t[t.length - 2]?.content ?? '';
+    return {
+      ...base, phase: 'reveal', exchanges: [],
+      reveal: {
+        correct: last.correct ?? false,
+        humanLabel,
+        aText: humanLabel === 'A' ? human : model,
+        bText: humanLabel === 'A' ? model : human,
+        call: (last.content[0] as Label) ?? humanLabel,
+        self: last.guesser === myRole,
+        nextRole: role,
+      },
+    };
+  }
+
+  // In-progress round: rebuild the Q&A thread from entries after the last guess.
+  let start = 0;
+  for (let i = t.length - 1; i >= 0; i--) { if (t[i].role === 'guess') { start = i + 1; break; } }
+  const exchanges: SyncExchange[] = [];
+  let pendingHuman: string | null = null;
+  for (const e of t.slice(start)) {
+    if (e.role === interrogatorRole) {
+      exchanges.push({ question: e.content });
+      pendingHuman = null;
+    } else if (e.role === witnessRole) {
+      pendingHuman = e.content;
+    } else if (e.role === 'model') {
+      const ex = exchanges[exchanges.length - 1];
+      if (ex && pendingHuman !== null) {
+        const humanIsA = !s.imitationFirst;
+        ex.a = humanIsA ? pendingHuman : e.content;
+        ex.b = humanIsA ? e.content : pendingHuman;
+        if (role === 'witness') { ex.yourLabel = humanIsA ? 'A' : 'B'; ex.modelLabel = humanIsA ? 'B' : 'A'; }
+        pendingHuman = null;
+      }
+    }
+  }
+
+  return { ...base, phase: roundPhase(s, userId).phase, exchanges, reveal: null };
+}
+
+// Send the authoritative snapshot to one recipient (text = Telegram fallback).
+async function syncTo(transport: Transport, s: GameSession, userId: UserId, text = ''): Promise<void> {
+  await transport.send(userId, text, buildSync(s, userId));
+}
+
+// Snapshot every participant (players + spectators), event-only.
+async function syncAll(transport: Transport, s: GameSession): Promise<void> {
+  const ids = [s.user1, s.user2, ...s.spectators].filter((id): id is UserId => id !== null);
+  await Promise.all(ids.map(id => transport.send(id, '', buildSync(s, id))));
+}
+
+// Narrate to spectators: a text line for Telegram, the snapshot for the app.
+// Drops spectators whose transport has gone away.
+async function narrateSpectators(transport: Transport, s: GameSession, text: string): Promise<void> {
+  if (s.spectators.length === 0) return;
+  const failed: UserId[] = [];
+  await Promise.all(s.spectators.map(async id => {
+    try { await transport.send(id, text, buildSync(s, id)); }
+    catch { failed.push(id); }
+  }));
+  if (failed.length > 0) s.spectators = s.spectators.filter(id => !failed.includes(id));
 }
 
 function leaderboardEntries(limit: number): LeaderboardEntry[] {
@@ -207,18 +292,18 @@ export async function handleJoin(
     touchUserSession(joined.user1!);
     initGameCache(joined as GameSession & { user1: UserId; user2: UserId });
     session.persistSessions();
-    const active = joined as GameSession & { user1: UserId; user2: UserId };
     await transport.send(joined.user2!, HELP_TEXT);
     await transport.send(
       joined.user1!,
       'Game started! You are the judge — take the first turn.',
-      gameStartEvent(active, joined.user1!, false),
+      buildSync(joined, joined.user1!),
     );
     await transport.send(
       joined.user2!,
       'Game started! Your partner is the judge. Wait for their first turn.',
-      gameStartEvent(active, joined.user2!, false),
+      buildSync(joined, joined.user2!),
     );
+    await Promise.all(joined.spectators.map(id => syncTo(transport, joined, id)));
     await Promise.all([joined.user1!, joined.user2!].map(id => handleLeaderboard(id, transport)));
     return;
   }
@@ -229,9 +314,12 @@ export async function handleJoin(
     touchUserSession(userId);
     const spectatorCount = watched.spectators.length;
     await transport.send(userId, HELP_TEXT);
-    await transport.send(userId, 'You are now watching this game as a spectator.');
+    await transport.send(userId, 'You are now watching this game as a spectator.', buildSync(watched, userId));
+    // Refresh everyone else's roster (so their restart picker sees the newcomer).
+    const others = [watched.user1, watched.user2, ...watched.spectators]
+      .filter((id): id is UserId => id !== null && id !== userId);
     const notice = `A spectator joined. Spectators watching: ${spectatorCount}`;
-    await Promise.all([watched.user1, watched.user2].filter((id): id is UserId => id !== null).map(id => transport.send(id, notice)));
+    await Promise.all(others.map(id => transport.send(id, notice, buildSync(watched, id))));
     return;
   }
 
@@ -241,6 +329,15 @@ export async function handleJoin(
 
 export async function handleHelp(userId: UserId, transport: Transport): Promise<void> {
   await transport.send(userId, HELP_TEXT);
+}
+
+// Replay the reconnecting client's full state. Since the snapshot is rebuilt
+// from the transcript, this is just "send the current truth" — no per-phase
+// special-casing, and idempotent if it fires more than once.
+export async function handleResync(userId: UserId, transport: Transport): Promise<void> {
+  const s = session.getSessionForParticipant(userId);
+  if (!s) return;  // not in a game — stay in the lobby
+  await transport.send(userId, '', buildSync(s, userId));
 }
 
 export async function handleLeaderboard(userId: UserId, transport: Transport): Promise<void> {
@@ -318,7 +415,8 @@ export async function handleStatus(userId: UserId, transport: Transport): Promis
     const presentPlayers = [s.user1, s.user2].filter((id): id is UserId => id !== null);
     const presentNames = presentPlayers.map(id => getName(id) ?? String(id));
     await transport.send(userId,
-      `Session waiting for players.\nPresent: ${presentNames.join(', ')}\n${spectatorLine}\nUse /restart to begin a new game with available participants.`
+      `Session waiting for players.\nPresent: ${presentNames.join(', ')}\n${spectatorLine}\nUse /restart to begin a new game with available participants.`,
+      buildSync(s, userId),
     );
     return;
   }
@@ -350,20 +448,7 @@ export async function handleStatus(userId: UserId, transport: Transport): Promis
 
   const playersLine = `Players: ${name1}, ${name2}`;
 
-  const { role, phase } = isSpectator
-    ? { role: null as Role | null, phase: 'lobby' as Phase }
-    : roundPhase(s, userId);
-  const statusEvent: GameEvent = {
-    kind: 'status',
-    role,
-    phase,
-    score: buildScore(s),
-    players: [name1, name2],
-    judge: judgeName,
-    spectators: s.spectators.length,
-  };
-
-  await transport.send(userId, `${playersLine}\n${judgeLine}\n${turnLine}\n${scoreLine}\n${spectatorLine}`, statusEvent);
+  await transport.send(userId, `${playersLine}\n${judgeLine}\n${turnLine}\n${scoreLine}\n${spectatorLine}`, buildSync(s, userId));
 }
 
 export async function handleRestart(
@@ -399,10 +484,9 @@ export async function handleRestart(
   const msg1 = 'Game restarted! You are the judge — take the first turn.';
   const msg2 = 'Game restarted! Your partner is the judge. Wait for their first turn.';
 
-  const active = s as GameSession & { user1: UserId; user2: UserId };
-  await transport.send(s.user1!, msg1, gameStartEvent(active, s.user1!, true));
-  await transport.send(s.user2!, msg2, gameStartEvent(active, s.user2!, true));
-  await Promise.all(s.spectators.map(id => transport.send(id, 'Game restarted with new players.')));
+  await transport.send(s.user1!, msg1, buildSync(s, s.user1!));
+  await transport.send(s.user2!, msg2, buildSync(s, s.user2!));
+  await Promise.all(s.spectators.map(id => transport.send(id, 'Game restarted with new players.', buildSync(s, id))));
 }
 
 export async function handleLeave(userId: UserId, transport: Transport): Promise<void> {
@@ -490,7 +574,7 @@ export async function handleHuman(userId: UserId, call: string, transport: Trans
   const verdict = correct ? 'Correct! Humans point' : 'Wrong! Model point';
   const scoreStr = formatOriginalScoreStr(s);
 
-  s.transcript.push({ role: 'guess', content: `${g} (${reveal})`, correct, guesser: role as 'user1' | 'user2' }); // role literal 'guess' kept for data compatibility
+  s.transcript.push({ role: 'guess', content: `${g} (${reveal})`, correct, guesser: role as 'user1' | 'user2', humanLabel: humanIsA ? 'A' : 'B' }); // role literal 'guess' kept for data compatibility
   saveState(s);
 
   const modelEntry = s.transcript[s.transcript.length - 2];
@@ -511,41 +595,26 @@ export async function handleHuman(userId: UserId, call: string, transport: Trans
     }).catch(() => {});
   }
 
-  await deliverRoundResultToSpectators(transport, s, callerLabel, correct, reveal, scoreStr);
-
-  // Capture the round's card layout BEFORE reshuffle flips imitationFirst.
-  const humanText = humanEntry?.content ?? '';
-  const modelText = modelEntry?.content ?? '';
-  const aText = humanIsA ? humanText : modelText;
-  const bText = humanIsA ? modelText : humanText;
-  const humanLabel: Label = humanIsA ? 'A' : 'B';
-
   session.reshuffle(s);
+  await narrateSpectators(transport, s,
+    `${callerLabel} called ${correct ? 'correctly' : 'incorrectly'}. ${reveal}\nScore — ${scoreStr}`);
 
+  // The snapshot reads the round result off the stored guess entry, so both the
+  // verdict view and each recipient's next role come straight from state.
   const youAreNewJudge = s.interrogator === userId;
-  const finalScore = buildScore(s);
-  const revealBase = {
-    kind: 'reveal' as const,
-    phase: 'reveal' as const,
-    correct,
-    humanLabel,
-    aText,
-    bText,
-    call: g as Label,
-    score: finalScore,
-  };
   await transport.send(
     userId,
     `${verdict} ${reveal}\n${scoreStr}\n\n` +
     (youAreNewJudge ? 'You are the judge — take the first turn.' : 'Your partner is the judge now. Wait for their first turn.'),
-    { ...revealBase, self: true, nextRole: youAreNewJudge ? 'judge' : 'witness' },
+    buildSync(s, userId),
   );
   await transport.send(
     partnerId,
     `Your partner called ${correct ? 'correctly' : 'incorrectly'}. ${reveal}\n${scoreStr}\n\n` +
     (!youAreNewJudge ? 'You are the judge — take the first turn.' : 'Your partner is the judge now. Wait for their first turn.'),
-    { ...revealBase, self: false, nextRole: youAreNewJudge ? 'witness' : 'judge' },
+    buildSync(s, partnerId),
   );
+  await Promise.all(s.spectators.map(id => syncTo(transport, s, id)));
 }
 
 export async function handleMessage(userId: UserId, text: string, transport: Transport): Promise<void> {
@@ -602,19 +671,15 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
 
       const myLabel: Label = s.imitationFirst ? 'B' : 'A';
       const modelLabel: Label = s.imitationFirst ? 'A' : 'B';
-      const witnessScore = buildScore(s);
+      const [msgA, msgB] = s.imitationFirst ? [prediction, stripped] : [stripped, prediction];
       await transport.send(
         userId,
         `You (${myLabel}): ${stripped}\nModel (${modelLabel}): ${prediction}`,
-        {
-          kind: 'pair', role: 'witness', phase: 'witness-wait',
-          yourText: stripped, yourLabel: myLabel, modelText: prediction, modelLabel,
-          score: witnessScore,
-        },
+        buildSync(s, userId),
       );
-      await deliverToReceiver(transport, s.interrogator, { human: stripped, prediction }, s.imitationFirst, buildScore(s));
+      await transport.send(s.interrogator, `A: ${msgA}\nB: ${msgB}`, buildSync(s, s.interrogator));
       const witnessLabel = getName(witnessId)!;
-      await deliverToSpectators(transport, s, witnessLabel, stripped, prediction);
+      await narrateSpectators(transport, s, `${witnessLabel}: ${stripped}\n${witnessLabel} (imitation): ${prediction}`);
       return;
     }
 
@@ -653,24 +718,10 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
     saveState(s);
     appendMessage(s.interrogator, witnessId, stripped);
 
-    const askScore = buildScore(s);
-    await transport.send(witnessId, stripped, {
-      kind: 'question', role: 'witness', phase: 'witness-answer', text: stripped, score: askScore,
-    });
-    // Event-only signal so the app moves the judge into a "waiting" state. Empty
-    // fallback text → text clients (Telegram/terminal) send nothing here.
-    await transport.send(s.interrogator, '', {
-      kind: 'questionSent', role: 'judge', phase: 'judge-wait', text: stripped, score: askScore,
-    });
-
-    if (s.spectators.length > 0) {
-      const judgeLabel = getName(s.interrogator)!;
-      const msg = `${judgeLabel} (judge): ${stripped}`;
-      const failed: UserId[] = [];
-      await Promise.all(s.spectators.map(async id => {
-        try { await transport.send(id, msg); }
-        catch { failed.push(id); }
-      }));
-      if (failed.length > 0) s.spectators = s.spectators.filter(id => !failed.includes(id));
-    }
+    // Witness gets the question text + snapshot; judge's snapshot moves them to
+    // the waiting state (event-only, so text clients stay silent).
+    await transport.send(witnessId, stripped, buildSync(s, witnessId));
+    await transport.send(s.interrogator, '', buildSync(s, s.interrogator));
+    const judgeLabel = getName(s.interrogator)!;
+    await narrateSpectators(transport, s, `${judgeLabel} (judge): ${stripped}`);
 }

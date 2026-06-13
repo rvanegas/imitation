@@ -87,6 +87,7 @@ export function startWebSocketServer(
           userId = id;
           transport.register(userId, ws);
           ws.send(JSON.stringify({ type: 'ready', name: getName(id) ?? '' }));
+          await dispatch(userId, '/resync');  // replay pending state after a reconnect
           return;
         }
 
@@ -125,6 +126,7 @@ export function startWebSocketServer(
           if (newName) ws.send(JSON.stringify({ type: 'nameUpdate', name: newName }));
         }
       } catch (err) {
+        console.error(`[ws dispatch] error handling "${text}" for user ${userId}:`, err);
         ws.send(JSON.stringify({ type: 'error', text: String(err) }));
       }
     });

@@ -47,54 +47,54 @@ export interface LeaderboardEntry {
   bestStreak: number;
 }
 
+// A present participant in a session. `seated` = currently holds a player slot
+// (vs. a spectator). Used to drive the in-app restart picker.
+export interface RosterEntry {
+  name: string;
+  seated: boolean;
+}
+
+// One question/answer exchange in the current round, reconstructed from the
+// transcript. `a`/`b` are the two anonymous cards (only once the witness has
+// answered); the witness additionally learns which side was theirs.
+export interface SyncExchange {
+  question: string;
+  a?: string;
+  b?: string;
+  yourLabel?: Label;   // witness only
+  modelLabel?: Label;  // witness only
+}
+
+// The result of the round that just ended (present only in the reveal phase).
+export interface RevealInfo {
+  correct: boolean;
+  humanLabel: Label;
+  aText: string;
+  bText: string;
+  call: Label;
+  self: boolean;       // did THIS recipient make the call?
+  nextRole: Role;      // this recipient's role in the next round
+}
+
 export type GameEvent =
-  // Lobby / lifecycle ---------------------------------------------------------
   | { kind: 'invite'; link: string }
+  | { kind: 'leaderboard'; entries: LeaderboardEntry[] }
+  // The authoritative snapshot. The app REPLACES its view with this — it is a
+  // pure function of the recorded transcript, so replaying it (on every change,
+  // on reconnect, repeatedly) always converges to the same screen. No deltas to
+  // drop or double up.
   | {
-      kind: 'gameStart';
-      role: Role;
+      kind: 'sync';
+      role: Role | null;
       phase: Phase;
+      score: ScoreInfo;
       you: string;
       partner: string;
-      score: ScoreInfo;
-      restarted: boolean;
-    }
-  // Round phases --------------------------------------------------------------
-  // To the witness: the judge's question. Witness moves to witness-answer.
-  | { kind: 'question'; role: 'witness'; phase: 'witness-answer'; text: string; score: ScoreInfo }
-  // To the judge: confirmation their question went out. Judge moves to judge-wait.
-  // (Sent event-only, with empty fallback text, so text clients stay silent.)
-  | { kind: 'questionSent'; role: 'judge'; phase: 'judge-wait'; text: string; score: ScoreInfo }
-  // To the witness: their own reply plus the model's blind prediction, each
-  // tagged with the A/B label the judge will see. Witness moves to witness-wait.
-  | {
-      kind: 'pair';
-      role: 'witness';
-      phase: 'witness-wait';
-      yourText: string;
-      yourLabel: Label;
-      modelText: string;
-      modelLabel: Label;
-      score: ScoreInfo;
-    }
-  // To the judge: the two anonymous cards to choose between. Judge → judge-decide.
-  | { kind: 'decide'; role: 'judge'; phase: 'judge-decide'; a: string; b: string; score: ScoreInfo }
-  // To both players: the round result. `self` = this recipient made the call.
-  | {
-      kind: 'reveal';
-      phase: 'reveal';
-      correct: boolean;
-      humanLabel: Label;   // which card was the real human
-      aText: string;
-      bText: string;
-      call: Label;         // the judge's call
-      self: boolean;       // did THIS recipient make the call?
-      score: ScoreInfo;
-      nextRole: Role;      // this recipient's role in the next round
-    }
-  // Ancillary -----------------------------------------------------------------
-  | { kind: 'status'; role: Role | null; phase: Phase; score: ScoreInfo; players: string[]; judge: string; spectators: number }
-  | { kind: 'leaderboard'; entries: LeaderboardEntry[] };
+      exchanges: SyncExchange[];  // the current round's full Q&A thread
+      roster: RosterEntry[];
+      waiting: boolean;           // an empty player seat → app shows restart picker
+      reveal: RevealInfo | null;  // set only in the reveal phase
+    };
 
 // --- Builders ---------------------------------------------------------------
 

@@ -1,14 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useReducer } from 'react';
 import { ActivityIndicator, View, Linking } from 'react-native';
-import { ImitationClient, ServerMessage } from './src/ws';
+import { ImitationClient, ServerMessage, Label } from './src/ws';
 import { getToken, saveToken, clearToken } from './src/store';
+import { reduce, initialState } from './src/gameState';
 import LoginScreen from './src/screens/LoginScreen';
-import GameScreen, { ChatMessage } from './src/screens/GameScreen';
+import GameScreen from './src/screens/GameScreen';
 
 type Screen = 'loading' | 'login' | 'game';
-
-let msgCounter = 0;
-function nextId(): string { return String(++msgCounter); }
 
 function parseInviteToken(url: string | null | undefined): string | null {
   if (!url) return null;
@@ -20,7 +18,7 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>('loading');
   const [client, setClient] = useState<ImitationClient | null>(null);
   const [playerName, setPlayerName] = useState('');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [state, dispatch] = useReducer(reduce, initialState);
 
   // Refs so URL-event callbacks always see the latest screen and client.
   const screenRef = useRef<Screen>('loading');
@@ -101,8 +99,8 @@ export default function App() {
       setScreen('game');
     } else if (msg.type === 'nameUpdate') {
       setPlayerName(msg.name);
-    } else if (msg.type === 'msg') {
-      setMessages(prev => [...prev, { id: nextId(), text: msg.text, incoming: true }]);
+    } else {
+      dispatch({ kind: 'server', msg });
     }
   }
 
@@ -110,7 +108,7 @@ export default function App() {
     c.setMessageHandler((msg) => handleServerMessage(msg, c));
     setClient(c);
     setPlayerName(name);
-    setMessages([]);
+    dispatch({ kind: 'reset' });
     setScreen('game');
   }
 
@@ -128,15 +126,23 @@ export default function App() {
 
   return (
     <GameScreen
-      client={client!}
+      state={state}
       name={playerName}
-      messages={messages}
-      onSend={(text) => setMessages(prev => [...prev, { id: nextId(), text, incoming: false }])}
+      onSend={(text) => client?.cmd(text)}
+      onCall={(label: Label) => client?.cmd(`/human ${label}`)}
+      onContinue={() => dispatch({ kind: 'continue' })}
+      onNewGame={() => client?.cmd('/start')}
+      onJoin={(token) => client?.cmd(`/start ${token}`)}
+      onRestart={(p1, p2) => client?.cmd(`/restart ${p1} ${p2}`)}
+      onInvite={() => client?.cmd('/invite')}
+      onLeaderboard={() => client?.cmd('/leaderboard')}
+      onLeave={() => { client?.cmd('/leave'); dispatch({ kind: 'reset' }); }}
+      onSetName={(n) => client?.cmd(`/setname ${n}`)}
       onSignOut={() => {
         client?.disconnect();
         clearToken();
         setClient(null);
-        setMessages([]);
+        dispatch({ kind: 'reset' });
         setScreen('login');
       }}
     />
