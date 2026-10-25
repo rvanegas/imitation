@@ -90,7 +90,9 @@ $SSH "$HOST" 'set -euo pipefail
     || echo "⚠ $conf does not set [websocket] host = \"127.0.0.1\"; the port listens on every interface" >&2
 
   cd ~/imitation
-  npm ci --omit=dev --silent --no-audit --no-fund
+  # Errors only, never --silent: a refused lock file is otherwise a deploy
+  # that stops here and says nothing.
+  npm ci --omit=dev --no-audit --no-fund --loglevel=error
 
   if ! cmp -s imitation.service /etc/systemd/system/imitation.service; then
     sudo install -m 644 imitation.service /etc/systemd/system/imitation.service
