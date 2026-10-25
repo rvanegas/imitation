@@ -34,7 +34,7 @@ interface Config {
   anthropic?: { api_key?: string; model?: string };
   ollama?:    { model?: string; base_url?: string };
   socket?:    { path?: string };
-  websocket?: { url?: string };
+  websocket?: { url?: string; host?: string };
   pricing?:   Record<string, PricingEntry>;
 }
 
@@ -58,6 +58,9 @@ export const OLLAMA_BASE_URL = raw.ollama?.base_url     ?? 'http://localhost:114
 export const SOCKET_PATH     = raw.socket?.path         || path.join(RUNTIME_DIR, 'imitation.sock');
 const wsUrl = raw.websocket?.url ?? null;
 export const WS_PORT = wsUrl ? (parseInt(new URL(wsUrl).port) || 8080) : 8080;
+// Unset listens on every interface, which a phone on the LAN needs in
+// development. The commons box sets "127.0.0.1": Caddy is its front door.
+export const WS_HOST = raw.websocket?.host;
 
 // Per-model pricing table. Keys are model IDs as recorded in cost-audit.jsonl.
 export const PRICING: Record<string, { inputPerMillion: number; outputPerMillion: number; cacheWritePerMillion: number; cacheReadPerMillion: number }> = {};

@@ -1,3 +1,7 @@
+import * as fs from 'fs';
+import * as http from 'http';
+import * as path from 'path';
+import { WS_HOST } from './config';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Transport } from './transport';
 import { GameEvent } from './events';
@@ -37,12 +41,39 @@ export class WebSocketTransport implements Transport {
 
 type Dispatch = (userId: UserId, text: string) => Promise<void>;
 
+// Written by bin/deploy at the root of the tree it ships; absent in a checkout.
+const DEPLOYED_FILE = path.join(__dirname, '..', 'deployed.json');
+
+function deployed(): Record<string, unknown> {
+  try {
+    return JSON.parse(fs.readFileSync(DEPLOYED_FILE, 'utf8'));
+  } catch {
+    return { commit: 'dev' };
+  }
+}
+
+// Plain HTTP on the same port answers GET /healthz with the deployed commit;
+// every other plain request is a 404. A WebSocket upgrade on any path is the
+// game, so the app's wss://imitation.rvanegas.co/ws and a bare ws://host:8080
+// both connect.
+function handleHttp(req: http.IncomingMessage, res: http.ServerResponse): void {
+  if (req.method === 'GET' && req.url === '/healthz') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, ...deployed() }));
+    return;
+  }
+  res.writeHead(404);
+  res.end();
+}
+
 export function startWebSocketServer(
   port: number,
   transport: WebSocketTransport,
   dispatch: Dispatch,
-): void {
-  const wss = new WebSocketServer({ port });
+): http.Server {
+  const server = http.createServer(handleHttp);
+  const wss = new WebSocketServer({ server });
+  server.listen(port, WS_HOST);
 
   wss.on('connection', (ws) => {
     let userId: UserId | null = null;
@@ -135,5 +166,6 @@ export function startWebSocketServer(
     ws.on('error', () => { if (userId !== null) transport.unregister(userId); });
   });
 
-  console.log(`WebSocket server listening on port ${port}`);
+  console.log(`WebSocket server listening on ${WS_HOST ?? '*'}:${port}`);
+  return server;
 }

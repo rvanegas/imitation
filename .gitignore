@@ -5,3 +5,5 @@ dist/
 sessions.json
 user_profiles.json
 *.bak
+# Stamped by bin/deploy, read by src/websocket.ts for /healthz
+deployed.json

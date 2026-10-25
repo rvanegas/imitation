@@ -21,6 +21,9 @@ base_url = "http://localhost:11434/v1"
 
 [websocket]
 # url = "ws://your-server-address:8080"
+# Interface to listen on; unset listens on all of them, which a phone on the
+# LAN needs. The commons box sets "127.0.0.1", behind Caddy.
+# host = "127.0.0.1"
 
 # USD per million tokens, keyed by model ID — verify at https://anthropic.com/pricing
 [pricing."claude-sonnet-4-6"]

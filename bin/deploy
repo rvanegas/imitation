@@ -1,0 +1,128 @@
+#!/bin/bash
+#
+# Ships the imitation server to the commons box and restarts it.
+#
+#   bin/deploy              refuses unless the tree is clean
+#   bin/deploy --dirty      ships the working tree as it stands, and says so
+#   bin/deploy --box-only   checks /healthz on the box's loopback only: before
+#                           the cutover, imitation.rvanegas.co does not reach it
+#
+# Modelled on thefloor/bin/deploy. Tests and the TypeScript build run here;
+# what is sent is dist/, the package files, deployed.json and the systemd unit.
+# Dependencies are installed on the box without dev ones.
+#
+# What is never sent: ~/.config/imitation/config.toml (the bot token and API
+# key, copied by hand once) and ~/.local/state/imitation (sessions and
+# profiles, which live only on the box from the cutover on).
+#
+# **One bot token, one process.** Telegram hands each update to one poller and
+# refuses a second, so the server must not also be running on the Mac with the
+# same bot_token once this one is up.
+#
+# A restart drops every open WebSocket; the app reconnects and /resync replays
+# its state.
+set -euo pipefail
+
+HOST=${COMMONS_HOST:?set COMMONS_HOST=ubuntu@<commons ip>}
+KEY=${COMMONS_KEY:-~/.ssh/lightsail-ubuntu}
+SSH="ssh -i $KEY -o BatchMode=yes"
+URL=${IMITATION_URL:-https://imitation.rvanegas.co}
+
+cd "$(dirname "$0")/.."
+
+allow_dirty=false
+box_only=false
+for arg in "$@"; do
+  case "$arg" in
+    --dirty) allow_dirty=true ;;
+    --box-only) box_only=true ;;
+    -h|--help)
+      awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 { exit }' "$0"
+      exit 0
+      ;;
+    *) echo "unknown argument: $arg" >&2; exit 2 ;;
+  esac
+done
+
+if [ -n "$(git status --porcelain)" ] && ! $allow_dirty; then
+  echo "✗ the tree is dirty; this ships the working tree, not a commit" >&2
+  echo >&2
+  git status --short >&2
+  echo >&2
+  echo "  commit first, or 'bin/deploy --dirty' to ship it as it is" >&2
+  exit 1
+fi
+
+echo "→ tests"
+npm test --silent >/dev/null
+
+# tsc is the type check as well as the build.
+echo "→ build"
+rm -rf dist
+npm run build --silent
+
+SHA=$(git rev-parse --short HEAD)
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+if [ -n "$(git status --porcelain)" ]; then
+  SHA="$SHA-dirty"
+  echo "⚠ deploying a dirty tree — the box will record $SHA" >&2
+fi
+if [ "$BRANCH" != "master" ]; then
+  echo "⚠ deploying from $BRANCH, not master" >&2
+fi
+
+# Read by src/websocket.ts for /healthz. Gitignored, and removed once sent.
+printf '{"commit":"%s","branch":"%s","deployedAt":"%s"}\n' \
+  "$SHA" "$BRANCH" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > deployed.json
+trap 'rm -f deployed.json' EXIT
+
+echo "→ sync to $HOST"
+$SSH "$HOST" 'mkdir -p ~/imitation/logs'
+rsync -az --delete -e "$SSH" dist/ "$HOST:imitation/dist/"
+rsync -az -e "$SSH" package.json package-lock.json deployed.json deploy/imitation.service \
+  "$HOST:imitation/"
+
+echo "→ install and restart"
+$SSH "$HOST" 'set -euo pipefail
+  conf=~/.config/imitation/config.toml
+  [ -f "$conf" ] || { echo "✗ no $conf on the box (PROJECTS.md names what it holds)" >&2; exit 1; }
+  grep -Eq "^[[:space:]]*host[[:space:]]*=[[:space:]]*\"127\.0\.0\.1\"" "$conf" \
+    || echo "⚠ $conf does not set [websocket] host = \"127.0.0.1\"; the port listens on every interface" >&2
+
+  cd ~/imitation
+  npm ci --omit=dev --silent --no-audit --no-fund
+
+  if ! cmp -s imitation.service /etc/systemd/system/imitation.service; then
+    sudo install -m 644 imitation.service /etc/systemd/system/imitation.service
+    sudo systemctl daemon-reload
+    sudo systemctl enable imitation >/dev/null 2>&1
+  fi
+  sudo systemctl restart imitation'
+
+echo "→ health on the box"
+got=""
+for _ in $(seq 20); do
+  got=$($SSH "$HOST" 'curl -fsS --max-time 3 http://127.0.0.1:8080/healthz' 2>/dev/null \
+    | sed -n 's/.*"commit":"\([^"]*\)".*/\1/p' || true)
+  [ "$got" = "$SHA" ] && break
+  sleep 1
+done
+if [ "$got" != "$SHA" ]; then
+  echo "✗ the box answers ${got:-nothing}, not $SHA" >&2
+  echo "  $SSH $HOST 'journalctl -u imitation -n 50'" >&2
+  exit 1
+fi
+echo "  127.0.0.1:8080 runs $SHA"
+
+if $box_only; then
+  echo "✓ deployed $SHA (box only; $URL not checked)"
+  exit 0
+fi
+
+echo "→ health at $URL"
+got=$(curl -fsS --max-time 10 "$URL/healthz" | sed -n 's/.*"commit":"\([^"]*\)".*/\1/p' || true)
+if [ "$got" != "$SHA" ]; then
+  echo "✗ $URL/healthz answers ${got:-nothing}, not $SHA" >&2
+  exit 1
+fi
+echo "✓ deployed $SHA, answering at $URL"
