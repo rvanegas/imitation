@@ -1,6 +1,4 @@
-# TODO
-
-## The app's server address comes from the Mac's config file
+# The app's server address comes from the Mac's config file
 
 Noted 2026-10-24, during the move to the commons box
 (`~/src/rvanegas-site/SITE.md`, Phase 2). Left as it is for now and assumed
