@@ -9,6 +9,7 @@ import { UserId } from './types';
 import { getName, getOrAssignName, createAnonymousUser, setWsToken, getUserIdByWsToken } from './userProfiles';
 import { isValidSessionToken } from './session';
 import { consumeLinkToken } from './linkTokens';
+import { friendlyApiError } from './apiError';
 
 export class WebSocketTransport implements Transport {
   private sockets = new Map<UserId, WebSocket>();
@@ -158,7 +159,12 @@ export function startWebSocketServer(
         }
       } catch (err) {
         console.error(`[ws dispatch] error handling "${text}" for user ${userId}:`, err);
-        ws.send(JSON.stringify({ type: 'error', text: String(err) }));
+        const friendly = friendlyApiError(err);
+        if (friendly) {
+          await transport.send(userId, friendly);
+        } else {
+          ws.send(JSON.stringify({ type: 'error', text: String(err) }));
+        }
       }
     });
 

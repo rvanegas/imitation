@@ -6,6 +6,7 @@ import * as engine from './engine';
 import { getOrCreateUserIdForTelegram } from './userProfiles';
 import { BOT_TOKEN } from './config';
 import { createLinkToken } from './linkTokens';
+import { friendlyApiError } from './apiError';
 
 function uid(ctx: { from: { id: number } }): UserId {
   return getOrCreateUserIdForTelegram(ctx.from.id);
@@ -81,6 +82,12 @@ export function setupTelegram(transport: Transport): Telegraf {
   bot.command('a', async (ctx) => engine.handleHuman(uid(ctx), 'A', tgTransport));
   bot.command('b', async (ctx) => engine.handleHuman(uid(ctx), 'B', tgTransport));
   bot.on(message('text'), async (ctx) => engine.handleMessage(uid(ctx), ctx.message.text, tgTransport));
+
+  bot.catch(async (err: unknown, ctx) => {
+    console.error(`[telegram] unhandled error for update ${ctx.update.update_id}:`, err);
+    const friendly = friendlyApiError(err) ?? 'Something went wrong. Please try again.';
+    try { await ctx.reply(friendly); } catch {}
+  });
 
   return bot;
 }

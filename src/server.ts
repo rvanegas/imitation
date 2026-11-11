@@ -6,6 +6,7 @@ import { UserId } from './types';
 import * as engine from './engine';
 import { getName, getOrCreateUserIdByName, getTelegramId } from './userProfiles';
 import { migrateAssessmentsToProfiles } from './assessments';
+import { friendlyApiError } from './apiError';
 import { SOCKET_PATH, WS_PORT } from './config';
 import { WebSocketTransport, startWebSocketServer } from './websocket';
 
@@ -163,7 +164,12 @@ export function start(telegram: boolean): void {
           await dispatch(userId, text);
         } catch (err) {
           console.error(`[socket dispatch] error handling "${text}" for user ${userId}:`, err);
-          socket.write(JSON.stringify({ type: 'error', text: String(err) }) + '\n');
+          const friendly = friendlyApiError(err);
+          if (friendly) {
+            await transport.send(userId, friendly);
+          } else {
+            socket.write(JSON.stringify({ type: 'error', text: String(err) }) + '\n');
+          }
         }
       }
     });
