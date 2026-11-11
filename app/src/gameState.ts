@@ -92,6 +92,7 @@ function reduceEvent(state: GameState, ev: GameEvent): GameState {
       const playing = !ev.waiting && ev.role !== null;
       return {
         ...state,
+        notice: null,  // sync is authoritative — clear any stale notice
         status: playing ? 'playing' : 'lobby',
         role: ev.role,
         phase: ev.phase,

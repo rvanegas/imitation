@@ -22,6 +22,11 @@ interface Props {
   onSignOut: () => void;
 }
 
+function isSpectating(state: GameState, name: string): boolean {
+  const me = state.you || name;
+  return !!me && state.roster.some(r => r.name === me && !r.seated);
+}
+
 const C = {
   bg: '#f2f2f7',
   card: '#ffffff',
@@ -54,6 +59,7 @@ function lastAnswered(state: GameState): boolean {
 
 // Body message for phases with no exchanges yet (start of a round).
 function waitingMessage(state: GameState): string {
+  if (state.role === null) return 'Waiting for the round to begin…';
   const p = state.partner || 'your partner';
   switch (state.phase) {
     case 'judge-ask':    return `Your turn — ask ${p} a question to begin the round.`;
@@ -117,15 +123,18 @@ export default function GameScreen(props: Props) {
   }
 
   function openMenu() {
+    const spectating = isSpectating(state, props.name);
     const labels = [
       ...(state.status === 'playing'
         ? ['Invite a player', 'New players…', 'Leaderboard', 'Set name…', 'Leave game']
-        : ['New game', 'Join a game', 'Leaderboard', 'Set name…']),
+        : spectating
+          ? ['Leave game', 'Leaderboard', 'Set name…']
+          : ['New game', 'Join a game', 'Leaderboard', 'Set name…']),
       'Sign out',
       'Cancel',
     ];
     const cancelButtonIndex = labels.length - 1;
-    const destructiveButtonIndex = state.status === 'playing' ? labels.indexOf('Leave game') : -1;
+    const destructiveButtonIndex = labels.indexOf('Leave game');
     const handle = (i: number) => {
       const choice = labels[i];
       if (choice === 'Invite a player') { awaitingShare.current = true; props.onInvite(); }
@@ -182,13 +191,15 @@ export default function GameScreen(props: Props) {
       )}
 
       {state.status === 'playing' && state.role && <StatusHUD state={state} />}
+      {isSpectating(state, props.name) && <SpectatorHUD state={state} />}
 
       <View style={styles.body}>
         {state.phase === 'reveal' && state.reveal
           ? <Reveal state={state} onContinue={props.onContinue} />
-          : state.status === 'lobby'
+          : (state.status === 'lobby' && !isSpectating(state, props.name))
             ? <Lobby
                 state={state}
+                name={props.name}
                 onNewGame={() => { awaitingShare.current = true; props.onNewGame(); }}
                 onJoin={promptJoin}
                 onRestart={props.onRestart}
@@ -197,7 +208,7 @@ export default function GameScreen(props: Props) {
             : <Thread ref={scrollRef} state={state} onCall={props.onCall} />}
       </View>
 
-      {showCompose(state) && (
+      {showCompose(state) && !isSpectating(state, props.name) && (
         <View style={styles.composeRow}>
           <TextInput
             style={styles.input}
@@ -270,6 +281,22 @@ function StatusHUD({ state }: { state: GameState }) {
           {state.partner ? <Text style={styles.hudVs}>  vs {state.partner}</Text> : null}
         </Text>
         <Text style={styles.hudHint}>{phaseHint(state)}</Text>
+      </View>
+    </View>
+  );
+}
+
+function SpectatorHUD({ state }: { state: GameState }) {
+  const s = state.score;
+  return (
+    <View style={styles.hud}>
+      <View style={styles.hudRow}>
+        <Text style={[styles.hudRole, { color: C.muted }]}>Watching · {state.partner}</Text>
+        {s && (
+          <Text style={styles.hudScore}>
+            Humans <Text style={styles.hudStrong}>{s.humans}</Text> · AI <Text style={styles.hudStrong}>{s.model}</Text>
+          </Text>
+        )}
       </View>
     </View>
   );
@@ -381,8 +408,8 @@ function RevealCard({ label, text, human }: { label: Label; text: string; human:
   );
 }
 
-function Lobby({ state, onNewGame, onJoin, onRestart, onShare }: {
-  state: GameState; onNewGame: () => void; onJoin: () => void; onRestart: (a: string, b: string) => void; onShare: (l: string) => void;
+function Lobby({ state, name, onNewGame, onJoin, onRestart, onShare }: {
+  state: GameState; name: string; onNewGame: () => void; onJoin: () => void; onRestart: (a: string, b: string) => void; onShare: (l: string) => void;
 }) {
   const inSession = state.roster.length > 0;
   const [selected, setSelected] = useState<string[]>([]);

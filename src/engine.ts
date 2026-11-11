@@ -96,9 +96,61 @@ function buildSync(s: GameSession, userId: UserId): Extract<GameEvent, { kind: '
   const roster = buildRoster(s);
   const you = getName(userId) ?? 'you';
 
-  // Lobby / spectator / a seat is empty → no live round to show.
+  // Seat is empty or user is not in the session at all → lobby.
   if (waiting || !isPlayer) {
     const partnerId = isPlayer ? (userId === s.user1 ? s.user2 : s.user1) : null;
+
+    // Spectator watching an active game: send the live board so the app can
+    // show the game thread. Same exchange view as the judge (A/B, no role labels).
+    if (!waiting && !isPlayer && hasPlayers(s)) {
+      const interrogatorRole: 'user1' | 'user2' = s.interrogator === s.user1 ? 'user1' : 'user2';
+      const witnessRole: 'user1' | 'user2' = interrogatorRole === 'user1' ? 'user2' : 'user1';
+      const t = s.transcript;
+      const last = t[t.length - 1];
+      const spectatorPartner = (getName(s.user1!) ?? 'user1') + ' & ' + (getName(s.user2!) ?? 'user2');
+      const spectatorBase = { kind: 'sync' as const, role: null as null, score, you, partner: spectatorPartner, roster, waiting: false };
+
+      if (last?.role === 'guess') {
+        const humanLabel: Label = last.humanLabel ?? 'A';
+        const human = t[t.length - 3]?.content ?? '';
+        const model = t[t.length - 2]?.content ?? '';
+        return {
+          ...spectatorBase, phase: 'reveal', exchanges: [],
+          reveal: {
+            correct: last.correct ?? false,
+            humanLabel,
+            aText: humanLabel === 'A' ? human : model,
+            bText: humanLabel === 'A' ? model : human,
+            call: (last.content[0] as Label) ?? humanLabel,
+            self: false,
+            nextRole: 'judge' as Role,
+          },
+        };
+      }
+
+      let start = 0;
+      for (let i = t.length - 1; i >= 0; i--) { if (t[i].role === 'guess') { start = i + 1; break; } }
+      const exchanges: SyncExchange[] = [];
+      let pendingHuman: string | null = null;
+      for (const e of t.slice(start)) {
+        if (e.role === interrogatorRole) {
+          exchanges.push({ question: e.content });
+          pendingHuman = null;
+        } else if (e.role === witnessRole) {
+          pendingHuman = e.content;
+        } else if (e.role === 'model') {
+          const ex = exchanges[exchanges.length - 1];
+          if (ex && pendingHuman !== null) {
+            const humanIsA = !s.imitationFirst;
+            ex.a = humanIsA ? pendingHuman : e.content;
+            ex.b = humanIsA ? e.content : pendingHuman;
+            pendingHuman = null;
+          }
+        }
+      }
+      return { ...spectatorBase, phase: roundPhase(s, s.interrogator).phase, exchanges, reveal: null };
+    }
+
     return {
       kind: 'sync', role: null, phase: 'lobby', score, you,
       partner: partnerId !== null ? (getName(partnerId) ?? 'partner') : '',
