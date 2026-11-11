@@ -24,7 +24,8 @@ the Mac runs with `--no-telegram`.
 npm run dev server              # Run server with Telegram bot
 npm run dev server --no-telegram  # Run server without Telegram (socket only)
 npm run dev server -t           # Same as --no-telegram
-npm run dev terminal <name>     # Connect a named terminal client to the server
+npm run dev terminal [name]     # Play on the deployed server; the first run links to Telegram via /link
+npm run dev terminal -l <name>  # Play on a local server, over its socket, as <name>
 npm run build                   # Compile TypeScript to dist/
 npm run start                   # Run compiled output from dist/
 cd app && npx expo start        # Run Expo dev server (./app)
@@ -43,6 +44,7 @@ Requires `~/.config/imitation/config.toml` (see `config.toml.example`):
 - `[anthropic] model` — model ID (default: `claude-sonnet-4-6`)
 - `[ollama] model` / `[ollama] base_url` — Ollama settings
 - `[socket] path` — override the Unix socket path
+- `[terminal] server` — the server `imitation terminal` plays on (default: `wss://imitation.rvanegas.co/ws`)
 
 XDG directories are respected (`XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_RUNTIME_DIR`).
 
@@ -69,7 +71,7 @@ This is a game implementing the Imitation Game (Turing Test). Two players exchan
 - `src/server.ts` — Runs the Unix socket server + optional Telegram bot; `CombinedTransport` tries socket first, falls back to Telegram
 - `src/bot.ts` — Telegraf bot setup; maps Telegram commands to `engine` handlers
 - `src/terminal.ts` — Interactive single-process terminal UI (multi-user via `:as <name>` meta-command); used for local testing
-- `src/client.ts` — Terminal client that connects to the socket server (for multi-process testing or real multi-user use)
+- `src/client.ts` — Terminal client: the deployed server's WebSocket by default (`[terminal] server`), signed in by a token saved in `terminal-tokens.json`; `--local` uses the Unix socket with name-only sign-in
 - `src/imitation.ts` — Claude API calls: `generatePrediction` and `generateAssessment`
 - `src/session.ts` — Session state, invite flow, persistence to `sessions.json`, 1-hour timeout
 - `src/delivery.ts` — Routes messages to sender (shows their message + AI prediction), receiver (A/B choice), and spectators
@@ -77,6 +79,7 @@ This is a game implementing the Imitation Game (Turing Test). Two players exchan
 - `src/types.ts` — Shared TypeScript interfaces (`GameSession`, `TranscriptEntry`, `MessagePair`, `UserProfile`)
 - `src/log.ts` — Session logging
 - `src/migrate.ts` — Data migration utility
+
 **Key state in `GameSession`:**
 - `imitationFirst` — randomized each round; determines whether A=AI/B=human or vice versa
 - `pendingResponder` — `null`=judge's turn, `witnessId`=response phase

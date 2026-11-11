@@ -4,7 +4,7 @@ diagProcessStart();
 const [,, cmd, ...args] = process.argv;
 
 function usage(): never {
-  console.error('Usage: npm run dev <server [--no-telegram|-t] | terminal <name> | costs [--by-session|-s] | sessions | experiment <name>>');
+  console.error('Usage: npm run dev <server [--no-telegram|-t] | terminal [--local|-l] [name] | costs [--by-session|-s] | sessions | experiment <name>>');
   process.exit(1);
 }
 
@@ -16,13 +16,16 @@ switch (cmd) {
     break;
   }
   case 'terminal': {
-    const name = args[0];
-    if (!name) {
-      console.error('Usage: npm run dev terminal <name>');
+    const local = args.includes('--local') || args.includes('-l');
+    const name = args.find(a => !a.startsWith('-'));
+    // Over the socket the name is who you are; against the deployed server it
+    // only names the saved sign-in, so one machine can hold several.
+    if (local && !name) {
+      console.error('Usage: npm run dev terminal --local <name>');
       process.exit(1);
     }
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    require('./client').start(name);
+    require('./client').start(name ?? 'default', local);
     break;
   }
   case 'costs': {

@@ -25,6 +25,10 @@ base_url = "http://localhost:11434/v1"
 # LAN needs. The commons box sets "127.0.0.1", behind Caddy.
 # host = "127.0.0.1"
 
+[terminal]
+# The server `imitation terminal` connects to; --local uses the socket above.
+# server = "wss://imitation.rvanegas.co/ws"
+
 # USD per million tokens, keyed by model ID — verify at https://anthropic.com/pricing
 [pricing."claude-sonnet-4-6"]
 input_per_million        = 3.00

@@ -35,6 +35,7 @@ interface Config {
   ollama?:    { model?: string; base_url?: string };
   socket?:    { path?: string };
   websocket?: { url?: string; host?: string };
+  terminal?:  { server?: string };
   pricing?:   Record<string, PricingEntry>;
 }
 
@@ -61,6 +62,9 @@ export const WS_PORT = wsUrl ? (parseInt(new URL(wsUrl).port) || 8080) : 8080;
 // Unset listens on every interface, which a phone on the LAN needs in
 // development. The commons box sets "127.0.0.1": Caddy is its front door.
 export const WS_HOST = raw.websocket?.host;
+// The server `imitation terminal` connects to unless told --local: the one
+// deployed on the commons box.
+export const SERVER_URL = raw.terminal?.server ?? 'wss://imitation.rvanegas.co/ws';
 
 // Per-model pricing table. Keys are model IDs as recorded in cost-audit.jsonl.
 export const PRICING: Record<string, { inputPerMillion: number; outputPerMillion: number; cacheWritePerMillion: number; cacheReadPerMillion: number }> = {};
