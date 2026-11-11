@@ -136,6 +136,7 @@ export default function App() {
       onRestart={(p1, p2) => client?.cmd(`/restart ${p1} ${p2}`)}
       onInvite={() => client?.cmd('/invite')}
       onLeaderboard={() => client?.cmd('/leaderboard')}
+      onReflection={() => client?.cmd('/reflection')}
       onLeave={() => { client?.cmd('/leave'); dispatch({ kind: 'reset' }); }}
       onSetName={(n) => client?.cmd(`/setname ${n}`)}
       onSignOut={() => {

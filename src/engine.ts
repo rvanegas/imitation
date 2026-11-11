@@ -434,7 +434,7 @@ export async function handleReflection(userId: UserId, transport: Transport): Pr
     await transport.send(userId, 'No reflection available yet — complete a round first.');
     return;
   }
-  await transport.send(userId, assessment);
+  await transport.send(userId, assessment, { kind: 'reflection', text: assessment });
 }
 
 export async function handleInvite(userId: UserId, transport: Transport): Promise<void> {

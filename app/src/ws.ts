@@ -69,6 +69,7 @@ export interface RevealInfo {
 export type GameEvent =
   | { kind: 'invite'; link: string }
   | { kind: 'leaderboard'; entries: LeaderboardEntry[] }
+  | { kind: 'reflection'; text: string }
   // The authoritative snapshot — the app replaces its view with it.
   | {
       kind: 'sync';

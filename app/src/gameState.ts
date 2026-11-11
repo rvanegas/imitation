@@ -38,6 +38,7 @@ export interface GameState {
   exchanges: Exchange[];      // this round's Q&A thread
   inviteLink: string | null;
   leaderboard: LeaderboardEntry[] | null;
+  reflection: string | null;
   reveal: RevealData | null;
   notice: string | null;      // transient banner (errors, rejections)
   roster: RosterEntry[];      // present participants (for the restart picker)
@@ -54,6 +55,7 @@ export const initialState: GameState = {
   exchanges: [],
   inviteLink: null,
   leaderboard: null,
+  reflection: null,
   reveal: null,
   notice: null,
   roster: [],
@@ -84,6 +86,9 @@ function reduceEvent(state: GameState, ev: GameEvent): GameState {
 
     case 'leaderboard':
       return { ...state, leaderboard: ev.entries };
+
+    case 'reflection':
+      return { ...state, reflection: ev.text };
 
     // The authoritative snapshot: replace the whole view. Because it's rebuilt
     // from the recorded transcript, replaying it (live, on reconnect, repeatedly)

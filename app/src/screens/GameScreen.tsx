@@ -19,6 +19,7 @@ interface Props {
   onLeaderboard: () => void;
   onLeave: () => void;
   onSetName: (name: string) => void;
+  onReflection: () => void;
   onSignOut: () => void;
 }
 
@@ -83,11 +84,14 @@ export default function GameScreen(props: Props) {
   const { state } = props;
   const [input, setInput] = useState('');
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showReflection, setShowReflection] = useState(false);
   const [showRestart, setShowRestart] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const awaitingShare = useRef(false);
   const prevInvite = useRef<string | null>(null);
   const wantedLeaderboard = useRef(false);
+  const wantedReflection = useRef(false);
+  const prevReflection = useRef<string | null>(null);
 
   // Open the share sheet once a fresh invite link arrives, but only when the
   // user actually asked to invite (avoids popping on cold-start state).
@@ -106,6 +110,15 @@ export default function GameScreen(props: Props) {
       setShowLeaderboard(true);
     }
   }, [state.leaderboard]);
+
+  // Show the reflection modal once text arrives after an explicit request.
+  useEffect(() => {
+    if (state.reflection && state.reflection !== prevReflection.current && wantedReflection.current) {
+      wantedReflection.current = false;
+      setShowReflection(true);
+    }
+    prevReflection.current = state.reflection;
+  }, [state.reflection]);
 
   useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });
@@ -126,10 +139,10 @@ export default function GameScreen(props: Props) {
     const spectating = isSpectating(state, props.name);
     const labels = [
       ...(state.status === 'playing'
-        ? ['Invite a player', 'New players…', 'Leaderboard', 'Set name…', 'Leave game']
+        ? ['Invite a player', 'New players…', 'Leaderboard', 'Reflection', 'Set name…', 'Leave game']
         : spectating
-          ? ['Leave game', 'Leaderboard', 'Set name…']
-          : ['New game', 'Join a game', 'Leaderboard', 'Set name…']),
+          ? ['Leave game', 'Leaderboard', 'Reflection', 'Set name…']
+          : ['New game', 'Join a game', 'Leaderboard', 'Reflection', 'Set name…']),
       'Sign out',
       'Cancel',
     ];
@@ -142,6 +155,7 @@ export default function GameScreen(props: Props) {
       else if (choice === 'Leaderboard') { wantedLeaderboard.current = true; props.onLeaderboard(); }
       else if (choice === 'Set name…') promptName();
       else if (choice === 'Leave game') props.onLeave();
+      else if (choice === 'Reflection') { wantedReflection.current = true; props.onReflection(); }
       else if (choice === 'New game') { awaitingShare.current = true; props.onNewGame(); }
       else if (choice === 'Join a game') promptJoin();
       else if (choice === 'Sign out') props.onSignOut();
@@ -230,6 +244,12 @@ export default function GameScreen(props: Props) {
         visible={showLeaderboard}
         entries={state.leaderboard}
         onClose={() => setShowLeaderboard(false)}
+      />
+
+      <ReflectionModal
+        visible={showReflection}
+        text={state.reflection}
+        onClose={() => setShowReflection(false)}
       />
 
       <RestartModal
@@ -512,6 +532,24 @@ function LeaderboardModal({ visible, entries, onClose }: {
   );
 }
 
+function ReflectionModal({ visible, text, onClose }: {
+  visible: boolean; text: string | null; onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={styles.modal}>
+        <View style={styles.modalHead}>
+          <Text style={styles.modalTitle}>Reflection</Text>
+          <Pressable onPress={onClose} hitSlop={12}><Text style={styles.modalClose}>Done</Text></Pressable>
+        </View>
+        <ScrollView contentContainerStyle={styles.reflectionContent}>
+          <Text style={styles.reflectionText}>{text ?? ''}</Text>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
 function RestartModal({ visible, roster, onRestart, onClose }: {
   visible: boolean;
   roster: GameState['roster'];
@@ -663,6 +701,9 @@ const styles = StyleSheet.create({
   lbStat:       { fontSize: 13, color: C.muted },
   lbStreak:     { fontSize: 13, color: C.muted },
   lbEmpty:      { textAlign: 'center', color: C.muted, marginTop: 24 },
+
+  reflectionContent: { padding: 20 },
+  reflectionText:    { fontSize: 15, color: '#000', lineHeight: 22 },
 
   restartBody:  { flex: 1, padding: 20, gap: 12 },
   restartBlurb: { fontSize: 15, color: C.muted, lineHeight: 21 },

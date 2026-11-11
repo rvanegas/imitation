@@ -79,6 +79,7 @@ export interface RevealInfo {
 export type GameEvent =
   | { kind: 'invite'; link: string }
   | { kind: 'leaderboard'; entries: LeaderboardEntry[] }
+  | { kind: 'reflection'; text: string }
   // The authoritative snapshot. The app REPLACES its view with this — it is a
   // pure function of the recorded transcript, so replaying it (on every change,
   // on reconnect, repeatedly) always converges to the same screen. No deltas to
