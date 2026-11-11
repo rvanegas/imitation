@@ -1,0 +1,12 @@
+#!/bin/bash
+# Before `ts deploy` sends anything: tests, then the TypeScript build, which
+# is the type check as well. dist/ is gitignored, so the tree stays clean.
+set -euo pipefail
+cd "$TS_ROOT"
+
+echo "→ tests"
+npm test --silent >/dev/null
+
+echo "→ build"
+rm -rf dist
+npm run build --silent

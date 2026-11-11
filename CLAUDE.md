@@ -1,6 +1,22 @@
-# CLAUDE.md
+@~/src/technosophia/WORKING.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+# Working on imitation
+
+**The practices this project shares with others are technosophia's**, at
+`~/src/technosophia`. The import above is its `WORKING.md` (trunk, the verbs,
+one at a time and only when asked, commit subjects and trailers), which says
+when to read the rest. What follows is imitation's alone.
+
+**Scripts run as `ts <name>`**, from anywhere in the checkout: this project's
+`bin/<name>` first, then technosophia's shared ones. `ts deploy` ships the
+server to the commons box; `ts health` says what is running there and
+`ts deploys` how it got there. They read `bin/ts.env`, ship only what
+`bin/ts.rsync` lets through, and run this project's steps from `bin/hooks/`.
+**One bot token, one process**: once commons is polling Telegram, a server on
+the Mac runs with `--no-telegram`.
+
+**`planning/`** is laid out as technosophia's `PLANNING.md` says;
+`planning/README.md` names the standing documents and when to read each.
 
 ## Commands
 
@@ -14,7 +30,9 @@ npm run start                   # Run compiled output from dist/
 cd app && npx expo start        # Run Expo dev server (./app)
 ```
 
-No test suite exists. There is no linter configured beyond TypeScript strict mode.
+`npm test` runs the Vitest suite (`planning/TESTS.md`), with no API calls; it
+includes technosophia's `note check` and `instructions check`. There is no
+linter beyond TypeScript strict mode.
 
 ## Configuration
 
@@ -59,8 +77,6 @@ This is a game implementing the Imitation Game (Turing Test). Two players exchan
 - `src/types.ts` — Shared TypeScript interfaces (`GameSession`, `TranscriptEntry`, `MessagePair`, `UserProfile`)
 - `src/log.ts` — Session logging
 - `src/migrate.ts` — Data migration utility
-- `src/userProfiles.ts` — **TODO:** remove `migrateFlat()` and its call in `loadStore()` once the new nested `user_profiles.json` format has been confirmed in production (auto-migration runs lazily on first server start after deploy)
-
 **Key state in `GameSession`:**
 - `imitationFirst` — randomized each round; determines whether A=AI/B=human or vice versa
 - `pendingResponder` — `null`=judge's turn, `witnessId`=response phase

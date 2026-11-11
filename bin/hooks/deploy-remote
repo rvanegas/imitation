@@ -1,0 +1,27 @@
+#!/bin/bash
+# After `ts deploy` syncs: install and restart on the box.
+#
+# **One bot token, one process.** Telegram hands each update to one poller and
+# refuses a second, so the server must not also be running on the Mac with the
+# same bot_token while this one is up.
+#
+# A restart drops every open WebSocket; the app reconnects and /resync replays
+# its state.
+set -euo pipefail
+ssh -o BatchMode=yes "$HOST" 'set -euo pipefail
+  conf=~/.config/imitation/config.toml
+  [ -f "$conf" ] || { echo "✗ no $conf on the box (planning/CREDENTIALS.md names what it holds)" >&2; exit 1; }
+  grep -Eq "^[[:space:]]*host[[:space:]]*=[[:space:]]*\"127\.0\.0\.1\"" "$conf" \
+    || echo "⚠ $conf does not set [websocket] host = \"127.0.0.1\"; the port listens on every interface" >&2
+
+  cd ~/imitation
+  # Errors only, never --silent: a refused lock file is otherwise a deploy
+  # that stops here and says nothing.
+  npm ci --omit=dev --no-audit --no-fund --loglevel=error
+
+  if ! cmp -s deploy/imitation.service /etc/systemd/system/imitation.service; then
+    sudo install -m 644 deploy/imitation.service /etc/systemd/system/imitation.service
+    sudo systemctl daemon-reload
+    sudo systemctl enable imitation >/dev/null 2>&1
+  fi
+  sudo systemctl restart imitation'

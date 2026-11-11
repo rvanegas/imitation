@@ -1,0 +1,15 @@
+# What `ts deploy` ships, as an rsync filter file (first match wins): the
+# compiled server, the package files the box installs from, and the systemd
+# unit. Everything else is neither shipped nor deleted on the box, including
+# its node_modules (installed there, without dev dependencies) and logs/.
+#
+# Never shipped, from anywhere: ~/.config/imitation/config.toml (the bot token
+# and API key, copied by hand once) and ~/.local/state/imitation (sessions and
+# profiles, which live only on the box).
++ /dist/***
++ /package.json
++ /package-lock.json
++ /deployed.json
++ /deploy/
++ /deploy/imitation.service
+- *

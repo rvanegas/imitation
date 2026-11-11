@@ -42,7 +42,7 @@ export class WebSocketTransport implements Transport {
 
 type Dispatch = (userId: UserId, text: string) => Promise<void>;
 
-// Written by bin/deploy at the root of the tree it ships; absent in a checkout.
+// Written by `ts deploy` at the root of the tree it ships; absent in a checkout.
 const DEPLOYED_FILE = path.join(__dirname, '..', 'deployed.json');
 
 function deployed(): Record<string, unknown> {

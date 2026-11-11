@@ -5,5 +5,9 @@ dist/
 sessions.json
 user_profiles.json
 *.bak
-# Stamped by bin/deploy, read by src/websocket.ts for /healthz
+# Stamped by ts deploy, read by src/websocket.ts for /healthz
 deployed.json
+
+# Worktrees live inside the repository (technosophia LANDING.md); each holds
+# its own .git file, which git add -A would stage as an embedded repository.
+/.claude/worktrees/

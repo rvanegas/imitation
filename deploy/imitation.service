@@ -1,5 +1,5 @@
 # The imitation server on the commons box: Telegram bot and WebSocket in one
-# process. Installed by bin/deploy. Config and state are the deploy user's XDG
+# process. Installed by `ts deploy`. Config and state are the deploy user's XDG
 # dirs (~/.config/imitation/config.toml, ~/.local/state/imitation); the config
 # sets [websocket] host = "127.0.0.1" so only Caddy reaches the port.
 [Unit]
