@@ -28,6 +28,14 @@ export function setupTelegram(transport: Transport): Telegraf {
 
   bot.telegram.getMe().then(me => { botUsername = me.username!; }).catch(() => {});
 
+  // The menu Telegram shows when a player types "/". Set on every start, so it
+  // follows COMMANDS without anybody remembering to; a failure costs only the
+  // menu, never the bot.
+  bot.telegram.setMyCommands(engine.COMMANDS.map(c => ({
+    command: c.command,
+    description: c.args ? `${c.args} — ${c.description}` : c.description,
+  }))).catch(err => console.error('[telegram] could not register the command menu:', err));
+
   // Normalise bot commands to lowercase so /Human and /HUMAN both work.
   bot.use((ctx, next) => {
     if (ctx.message && 'text' in ctx.message) {

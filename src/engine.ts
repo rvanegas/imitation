@@ -268,18 +268,25 @@ export function initSessions(transport: Transport): void {
   session.loadPersistedSessions();
 }
 
-export const HELP_TEXT =
-  '/start — Create a new Turing Test game\n' +
-  '/human A|B — Make your call on which message was written by the human\n' +
-  '/invite — Get the session invite; first to join becomes player 2, others watch\n' +
-  '/status — Show current turn, score, and spectator count\n' +
-  '/void — Take back the last exchange, when it leaned on something only you two know\n' +
-  '/reflection — Show the AI\'s assessment of the most recent call\n' +
-  '/leave — Leave the current session\n' +
-  '/restart <user1> <user2> — Restart the game with two players from the session\n' +
-  '/setname <name> — Set your display name\n' +
-  '/leaderboard — Show the top 10 players by wins\n' +
-  '/help — Show this message';
+// The commands a player is told about: /help prints them, and the Telegram bot
+// registers them as its command menu, so the two cannot list different things.
+export const COMMANDS: { command: string; args?: string; description: string }[] = [
+  { command: 'start',       description: 'Create a new Turing Test game' },
+  { command: 'human',       args: 'A|B', description: 'Make your call on which message was written by the human' },
+  { command: 'invite',      description: 'Get the session invite; first to join becomes player 2, others watch' },
+  { command: 'status',      description: 'Show current turn, score, and spectator count' },
+  { command: 'void',        description: 'Take back the last exchange, when it leaned on something only you two know' },
+  { command: 'reflection',  description: 'Show the AI\'s assessment of the most recent call' },
+  { command: 'leave',       description: 'Leave the current session' },
+  { command: 'restart',     args: '<user1> <user2>', description: 'Restart the game with two players from the session' },
+  { command: 'setname',     args: '<name>', description: 'Set your display name' },
+  { command: 'leaderboard', description: 'Show the top 10 players by wins' },
+  { command: 'help',        description: 'Show this message' },
+];
+
+export const HELP_TEXT = COMMANDS
+  .map(c => `/${c.command}${c.args ? ` ${c.args}` : ''} — ${c.description}`)
+  .join('\n');
 
 export async function handleStart(
   userId: UserId,

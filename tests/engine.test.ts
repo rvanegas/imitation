@@ -277,3 +277,16 @@ describe('void', () => {
     expect(transport.lastMessage(judgeId)).toMatch(/no exchange has happened yet/);
   });
 });
+
+describe('command menu', () => {
+  // Telegram refuses the whole menu if one entry breaks its rules, and the
+  // refusal reaches only the server log.
+  it('every command is one Telegram accepts', () => {
+    for (const c of engine.COMMANDS) {
+      expect(c.command).toMatch(/^[a-z0-9_]{1,32}$/);
+      const description = c.args ? `${c.args} — ${c.description}` : c.description;
+      expect(description.length).toBeGreaterThan(0);
+      expect(description.length).toBeLessThanOrEqual(256);
+    }
+  });
+});
