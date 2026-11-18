@@ -273,6 +273,8 @@ export function initSessions(transport: Transport): void {
 export const COMMANDS: { command: string; args?: string; description: string }[] = [
   { command: 'start',       description: 'Create a new Turing Test game' },
   { command: 'human',       args: 'A|B', description: 'Make your call on which message was written by the human' },
+  { command: 'a',           description: 'Call A the human' },
+  { command: 'b',           description: 'Call B the human' },
   { command: 'invite',      description: 'Get the session invite; first to join becomes player 2, others watch' },
   { command: 'status',      description: 'Show current turn, score, and spectator count' },
   { command: 'void',        description: 'Take back the last exchange, when it leaned on something only you two know' },
