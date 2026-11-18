@@ -236,7 +236,11 @@ export async function generatePrediction(
   const response = await client.messages.create({
     model: ANTHROPIC_MODEL,
     max_tokens: 8000,
-    thinking: { type: 'enabled', budget_tokens: 1024 },
+    // Adaptive is the only way to ask for thinking on the current models: a
+    // fixed budget_tokens is a 400 on Sonnet 5 and later. Effort is what
+    // bounds it now, at about the depth the old 1024-token budget allowed.
+    thinking: { type: 'adaptive' },
+    output_config: { effort: 'medium' },
     system: toApiBlocks(allBlocks),
     messages: [{ role: 'user', content: prompt }],
   });
@@ -331,7 +335,10 @@ export async function generateAssessment(
 
   const response = await client.messages.create({
     model: ANTHROPIC_MODEL,
-    max_tokens: 1024,
+    // Thinking is on by default from Sonnet 5 and counts against max_tokens,
+    // so the ceiling leaves it room above the assessment itself.
+    max_tokens: 4096,
+    output_config: { effort: 'low' },
     system: toApiBlocks(allBlocks),
     messages: [{ role: 'user', content: prompt }],
   });
@@ -348,8 +355,8 @@ export async function generateAssessment(
     cacheReadTokens: response.usage.cache_read_input_tokens ?? undefined,
   });
 
-  const block = response.content[0];
-  if (block.type !== 'text') throw new Error('Unexpected response type from Claude');
+  const block = response.content.find(b => b.type === 'text');
+  if (!block || block.type !== 'text') throw new Error('Unexpected response type from Claude');
   return block.text.trim();
 }
 
@@ -401,6 +408,7 @@ export async function synthesizeProfile(
     const response = await client.messages.create({
       model: ANTHROPIC_MODEL,
       max_tokens: maxTokens,
+      output_config: { effort: 'low' },
       messages: [{ role: 'user', content: prompt }],
     });
 
@@ -414,8 +422,9 @@ export async function synthesizeProfile(
       outputTokens: response.usage.output_tokens,
     });
 
-    const block = response.content[0];
-    if (block.type !== 'text') throw new Error('Unexpected response type from Claude');
+    // A thinking block comes first when the model thinks, so find the text.
+    const block = response.content.find(b => b.type === 'text');
+    if (!block || block.type !== 'text') throw new Error('Unexpected response type from Claude');
     return block.text.trim();
   };
 

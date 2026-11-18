@@ -8,7 +8,7 @@ model_provider = "anthropic"
 
 [anthropic]
 api_key = "your_anthropic_api_key_here"
-model   = "claude-sonnet-4-6"
+model   = "claude-sonnet-5-5"
 # model = "claude-haiku-4-5"
 
 [ollama]
@@ -30,6 +30,12 @@ base_url = "http://localhost:11434/v1"
 # server = "wss://imitation.rvanegas.co/ws"
 
 # USD per million tokens, keyed by model ID — verify at https://anthropic.com/pricing
+[pricing."claude-sonnet-5-5"]
+input_per_million        = 2.00
+output_per_million       = 10.00
+cache_write_per_million  = 2.50
+cache_read_per_million   = 0.20
+
 [pricing."claude-sonnet-4-6"]
 input_per_million        = 3.00
 output_per_million       = 15.00
