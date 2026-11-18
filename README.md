@@ -41,7 +41,7 @@ It plays on the deployed server (`wss://imitation.twohands.co/ws`). The first ru
 
 **Linking makes the terminal that Telegram account.** Two players linked to the same account are one player, and the server refuses a player's own invite. The terminal player links a different Telegram account from the one the other player is on.
 
-**In a game**, the judge writes first and receives two replies, A and B, one from the witness and one from the model; `/a` or `/b` (or `/human A|B`) calls which is human. `/status`, `/invite`, `/leave` and `/help` work from either side.
+**In a game**, the judge writes first and receives two replies, A and B, one from the witness and one from the model; `/a` or `/b` calls which is human. `/status`, `/invite`, `/leave` and `/help` work from either side.
 
 **When a message leans on something only the two of you know**, the model has no way to imitate it and the exchange tests nothing. A check catches the obvious cases before they are delivered; for what gets past it, either player sends `/void`. That takes back the round's last exchange (the question, the answer and the model's prediction, or just the question if it hasn't been answered yet), and the judge asks something else. Voiding again takes back the exchange before it. A call, once made, stands.
 

@@ -129,7 +129,7 @@ export default function App() {
       state={state}
       name={playerName}
       onSend={(text) => client?.cmd(text)}
-      onCall={(label: Label) => client?.cmd(`/human ${label}`)}
+      onCall={(label: Label) => client?.cmd(`/${label.toLowerCase()}`)}
       onContinue={() => dispatch({ kind: 'continue' })}
       onNewGame={() => client?.cmd('/start')}
       onJoin={(token) => client?.cmd(`/start ${token}`)}

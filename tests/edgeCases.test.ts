@@ -26,7 +26,7 @@ describe('spectators', () => {
     expect(s.spectators).toContain(specUid);
   });
 
-  it('spectator cannot call /human', async () => {
+  it('spectator cannot make a call', async () => {
     const setup = await startGame();
     const { token, transport } = setup;
     const specUid = nextUid();

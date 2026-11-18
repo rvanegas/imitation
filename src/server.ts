@@ -107,7 +107,6 @@ export function start(telegram: boolean): void {
           }
           break;
         }
-        case 'human':   await engine.handleHuman(userId, args[0] ?? '', transport); break;
         case 'a':       await engine.handleHuman(userId, 'A', transport); break;
         case 'b':       await engine.handleHuman(userId, 'B', transport); break;
         case 'void':    await engine.handleVoid(userId, transport); break;

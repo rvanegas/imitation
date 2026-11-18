@@ -272,7 +272,6 @@ export function initSessions(transport: Transport): void {
 // registers them as its command menu, so the two cannot list different things.
 export const COMMANDS: { command: string; args?: string; description: string }[] = [
   { command: 'start',       description: 'Create a new Turing Test game' },
-  { command: 'human',       args: 'A|B', description: 'Make your call on which message was written by the human' },
   { command: 'a',           description: 'Call A the human' },
   { command: 'b',           description: 'Call B the human' },
   { command: 'invite',      description: 'Get the session invite; first to join becomes player 2, others watch' },
@@ -612,7 +611,7 @@ export async function handleHuman(userId: UserId, call: string, transport: Trans
 
   const g = call.toUpperCase();
   if (g !== 'A' && g !== 'B') {
-    await transport.send(userId, 'Usage: /human A  or  /human B');
+    await transport.send(userId, 'Use /a or /b.');
     return;
   }
 
@@ -774,7 +773,7 @@ export async function handleMessage(userId: UserId, text: string, transport: Tra
   }
 
   if (/^human[/\s]*(\w+\s+)*[ab]\b/i.test(text.trim()) || /^[ab]$/i.test(text.trim())) {
-    await transport.send(userId, 'Looks like you meant to make your call. Use /human A or /human B.');
+    await transport.send(userId, 'Looks like you meant to make your call. Use /a or /b.');
     return;
   }
 

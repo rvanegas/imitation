@@ -83,14 +83,20 @@ export function setupTelegram(transport: Transport): Telegraf {
     const args = ctx.message.text.split(/\s+/);
     await engine.handleRestart(uid(ctx), args[1] ?? '', args[2] ?? '', tgTransport);
   });
-  bot.command('human', async (ctx) => {
-    const guess = ctx.message.text.split(/\s+/)[1] ?? '';
-    await engine.handleHuman(uid(ctx), guess, tgTransport);
-  });
   bot.command('void', async (ctx) => engine.handleVoid(uid(ctx), tgTransport));
   bot.command('a', async (ctx) => engine.handleHuman(uid(ctx), 'A', tgTransport));
   bot.command('b', async (ctx) => engine.handleHuman(uid(ctx), 'B', tgTransport));
-  bot.on(message('text'), async (ctx) => engine.handleMessage(uid(ctx), ctx.message.text, tgTransport));
+  bot.on(message('text'), async (ctx) => {
+    // A command no handler above took. Passed on, it would reach the other
+    // player as a game message, which is what a mistyped or retired command
+    // (/human, until 2026-11-18) would otherwise do. The socket says the same.
+    const unknown = ctx.message.text.match(/^\/(\S+)/);
+    if (unknown) {
+      await tgTransport.send(uid(ctx), `Unknown command: /${unknown[1]}`);
+      return;
+    }
+    await engine.handleMessage(uid(ctx), ctx.message.text, tgTransport);
+  });
 
   bot.catch(async (err: unknown, ctx) => {
     console.error(`[telegram] unhandled error for update ${ctx.update.update_id}:`, err);

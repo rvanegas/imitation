@@ -59,7 +59,7 @@ Meta commands (not sent to the game):
 Game commands (issued as the active user):
   /start                  Create a Turing Test game and get an invite token
   /start <token>          Join a game (or watch as spectator) via invite token
-  /human A|B              Make your call on which is the human
+  /a  /b                  Call A or B the human
   /void                   Take back the last exchange of the round
   /invite                 Show the session invite token
   /status                 Show turn, score, and spectators
@@ -124,9 +124,6 @@ Game commands (issued as the active user):
             }
             break;
           }
-          case 'human':
-            await engine.handleHuman(userId, args[0] ?? '', transport);
-            break;
           case 'a':
             await engine.handleHuman(userId, 'A', transport);
             break;

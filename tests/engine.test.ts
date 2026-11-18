@@ -138,7 +138,7 @@ describe('judge call + scoring', () => {
     const setup = await startGame();
     const { uid1, uid2 } = setup;
     const s = sessionMod.getSessionForParticipant(uid1)!;
-    s.imitationFirst = false; // A=human, B=model → /human A is correct
+    s.imitationFirst = false; // A=human, B=model → /a is correct
 
     await playRound(setup, 'Question?', 'Answer!', 'A');
 
@@ -151,7 +151,7 @@ describe('judge call + scoring', () => {
     const setup = await startGame();
     const { uid1, uid2 } = setup;
     const s = sessionMod.getSessionForParticipant(uid1)!;
-    s.imitationFirst = false; // A=human, B=model → /human B is wrong
+    s.imitationFirst = false; // A=human, B=model → /b is wrong
 
     await playRound(setup, 'Question?', 'Answer!', 'B');
 
