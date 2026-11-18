@@ -25,9 +25,9 @@ Running games and studying the transcripts produces observations about where cur
 
 The server runs on the commons box, with the Telegram bot in the same process, so there is nothing to start. A game is two players; each can be on Telegram or in a terminal, in any mix.
 
-**Starting a game.** Whoever sends `/start` creates the game and is the judge. The reply is an invite: a `https://t.me/<bot>?start=<token>` link, and an `imitation://join/<token>` line for the iPhone app. Send it to the other player. The first to join becomes the witness; anyone joining after watches.
+**Starting a game.** Whoever sends `/start` creates the game and is the judge. The reply is an invite: a `https://t.me/ImitationGameBot?start=<token>` link, and an `imitation://join/<token>` line for the iPhone app. Send it to the other player. The first to join becomes the witness; anyone joining after watches.
 
-**On Telegram**, DM the bot. To start, send `/start`; to join, tap the invite's `t.me` link.
+**On Telegram**, DM [@ImitationGameBot](https://t.me/ImitationGameBot). To start, send `/start`; to join, tap the invite's `t.me` link.
 
 **In a terminal**, from this checkout:
 
