@@ -233,6 +233,20 @@ export function appendMessage(userId: UserId, partnerId: UserId, message: string
   saveStore(store);
 }
 
+// Takes back a message appendMessage kept, when its exchange is voided. Since
+// appendMessage keeps one copy of each distinct message, an identical message
+// sent earlier goes with it; for a message worth voiding that is no loss.
+export function removeMessage(userId: UserId, partnerId: UserId, message: string): void {
+  const store = loadStore();
+  const key = `${userId}:${partnerId}`;
+  const msgs = store.pairs[key]?.messages;
+  if (!msgs) return;
+  const i = msgs.lastIndexOf(message);
+  if (i === -1) return;
+  msgs.splice(i, 1);
+  saveStore(store);
+}
+
 export function recordRoundResult(user1: UserId, user2: UserId, won: boolean, currentStreak: number): void {
   const store = loadStore();
   const key = `${Math.min(user1, user2)}:${Math.max(user1, user2)}`;

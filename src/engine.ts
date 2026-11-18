@@ -3,7 +3,7 @@ import { Transport } from './transport';
 import * as session from './session';
 import { generatePrediction, generateAssessment, buildCachedBlock, checkMessageFairness } from './imitation';
 import {
-  getProfile, appendMessage, getName, getOrAssignName, setName,
+  getProfile, appendMessage, removeMessage, getName, getOrAssignName, setName,
   isValidName, getUserIdByName, touchUserSession,
   recordRoundResult, getLeaderboard,
 } from './userProfiles';
@@ -273,6 +273,7 @@ export const HELP_TEXT =
   '/human A|B — Make your call on which message was written by the human\n' +
   '/invite — Get the session invite; first to join becomes player 2, others watch\n' +
   '/status — Show current turn, score, and spectator count\n' +
+  '/void — Take back the last exchange, when it leaned on something only you two know\n' +
   '/reflection — Show the AI\'s assessment of the most recent call\n' +
   '/leave — Leave the current session\n' +
   '/restart <user1> <user2> — Restart the game with two players from the session\n' +
@@ -587,7 +588,9 @@ export async function handleHuman(userId: UserId, call: string, transport: Trans
     return;
   }
 
-  const hasExchange = s.transcript.some(e => e.role === 'model');
+  // This round's, not the game's: a voided exchange can leave a round empty
+  // with earlier rounds' exchanges still in the transcript.
+  const hasExchange = s.transcript.slice(roundStart(s)).some(e => e.role === 'model');
   if (userId !== s.interrogator || s.pendingResponder !== null || !hasExchange) {
     await transport.send(userId, 'It is not your turn to call, or no exchange has happened yet.');
     return;
@@ -667,6 +670,75 @@ export async function handleHuman(userId: UserId, call: string, transport: Trans
     buildSync(s, partnerId),
   );
   await Promise.all(s.spectators.map(id => syncTo(transport, s, id)));
+}
+
+// Where the current round begins in the transcript: just after the last call.
+function roundStart(s: GameSession): number {
+  for (let i = s.transcript.length - 1; i >= 0; i--) {
+    if (s.transcript[i].role === 'guess') return i + 1;
+  }
+  return 0;
+}
+
+// Takes back the latest exchange of the round, for when a message leans on
+// something only the two players know: the model cannot imitate it, so the
+// exchange tests nothing. The fairness check catches the obvious cases before
+// delivery; this is for what it lets through. Either player can void, since
+// judge and witness are on the same side and neither gains by it.
+//
+// Asked and not yet answered, the question goes, with the prediction made for
+// it. Answered, the question, the answer and the prediction all go. Either
+// way the judge asks again, and nothing voided reaches the transcript the
+// assessment reads or the history the model takes its style examples from.
+// Voiding again takes back the exchange before; a call cannot be voided.
+export async function handleVoid(userId: UserId, transport: Transport): Promise<void> {
+  const s = session.getSessionForParticipant(userId);
+  if (!s) {
+    await transport.send(userId, 'No active session.');
+    return;
+  }
+  if (!session.isPlayer(s, userId)) {
+    await transport.send(userId, 'You are watching as a spectator.');
+    return;
+  }
+  session.touchSession(s);
+  touchUserSession(userId);
+  if (!hasPlayers(s)) {
+    await transport.send(userId, 'The other player has left. Use /restart to begin a new game with available participants.');
+    return;
+  }
+
+  const witnessId = session.getPartner(s, s.interrogator)!;
+  const t = s.transcript;
+  const roundEntries = t.length - roundStart(s);
+  let what: string;
+  if (s.pendingResponder === witnessId && roundEntries >= 1) {
+    const [question] = t.splice(t.length - 1, 1);
+    removeMessage(s.interrogator, witnessId, question.content);
+    s.pendingPrediction = null;
+    s.pendingSystemPrompt = null;
+    s.pendingResponder = null;
+    what = 'the question';
+  } else if (s.pendingResponder === null && roundEntries >= 3 && t[t.length - 1].role === 'model') {
+    const [question, answer] = t.splice(t.length - 3, 3);
+    removeMessage(s.interrogator, witnessId, question.content);
+    removeMessage(witnessId, s.interrogator, answer.content);
+    s.currentRoundTurns -= 1;
+    what = 'the last question and its answers';
+  } else {
+    await transport.send(userId, 'There is nothing in this round to void.');
+    return;
+  }
+  saveState(s);
+
+  const voider = getName(userId)!;
+  const partnerId = session.getPartner(s, userId)!;
+  const next = (id: UserId) => id === s.interrogator
+    ? 'You are the judge — ask something else.'
+    : 'Wait for the judge to ask something else.';
+  await transport.send(userId, `You voided ${what}. ${next(userId)}`, buildSync(s, userId));
+  await transport.send(partnerId, `${voider} voided ${what}. ${next(partnerId)}`, buildSync(s, partnerId));
+  await narrateSpectators(transport, s, `${voider} voided ${what}.`);
 }
 
 export async function handleMessage(userId: UserId, text: string, transport: Transport): Promise<void> {

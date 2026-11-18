@@ -41,6 +41,8 @@ It plays on the deployed server (`wss://imitation.rvanegas.co/ws`). The first ru
 
 **In a game**, the judge writes first and receives two replies, A and B, one from the witness and one from the model; `/a` or `/b` (or `/human A|B`) calls which is human. `/status`, `/invite`, `/leave` and `/help` work from either side.
 
+**When a message leans on something only the two of you know**, the model has no way to imitate it and the exchange tests nothing. A check catches the obvious cases before they are delivered; for what gets past it, either player sends `/void`. That takes back the round's last exchange (the question, the answer and the model's prediction, or just the question if it hasn't been answered yet), and the judge asks something else. Voiding again takes back the exchange before it. A call, once made, stands.
+
 ---
 
 ## Architecture

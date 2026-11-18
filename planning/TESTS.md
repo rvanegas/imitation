@@ -19,7 +19,7 @@ tests/
     MockTransport.ts    — captures send() calls per userId
     gameHelpers.ts      — startGame(), playRound(), nextUid() helpers
     setup.ts            — beforeEach: wipes sessions.json & user_profiles.json
-  engine.test.ts        — core game flow (13 tests)
+  engine.test.ts        — core game flow (18 tests)
   edgeCases.test.ts     — spectators, leave, restart, setname guards (8 tests)
   delivery.test.ts      — A/B ordering, spectator delivery, failed-spectator pruning (4 tests)
 ```

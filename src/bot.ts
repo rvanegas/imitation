@@ -79,6 +79,7 @@ export function setupTelegram(transport: Transport): Telegraf {
     const guess = ctx.message.text.split(/\s+/)[1] ?? '';
     await engine.handleHuman(uid(ctx), guess, tgTransport);
   });
+  bot.command('void', async (ctx) => engine.handleVoid(uid(ctx), tgTransport));
   bot.command('a', async (ctx) => engine.handleHuman(uid(ctx), 'A', tgTransport));
   bot.command('b', async (ctx) => engine.handleHuman(uid(ctx), 'B', tgTransport));
   bot.on(message('text'), async (ctx) => engine.handleMessage(uid(ctx), ctx.message.text, tgTransport));
