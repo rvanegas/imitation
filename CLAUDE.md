@@ -89,6 +89,6 @@ This is a game implementing the Imitation Game (Turing Test). Two players exchan
 - `teamScores` — humans vs. model scores
 
 **Commands available in-game:**
-`/start`, `/a`, `/b`, `/void`, `/invite`, `/status`, `/stop`, `/leave`, `/restart <u1> <u2>`, `/setname <name>`, `/help`
+`/start`, `/a`, `/b`, `/void`, `/invite`, `/status`, `/leave`, `/restart <u1> <u2>`, `/setname <name>`, `/help`
 
 **AI prediction prompt (in `imitation.ts`):** Instructs Claude to impersonate the human sender using their prior messages as style examples. The prompt explicitly handles opening moves, consecutive turns (interruptions), spelling/grammar matching, and forbids Claude from identifying itself as AI. After each round, `generateAssessment` is called asynchronously to analyze prediction quality and store results via `appendAssessment`.
