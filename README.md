@@ -21,6 +21,28 @@ Running games and studying the transcripts produces observations about where cur
 
 ---
 
+## How to play
+
+The server runs on the commons box, with the Telegram bot in the same process, so there is nothing to start. A game is two players; each can be on Telegram or in a terminal, in any mix.
+
+**Starting a game.** Whoever sends `/start` creates the game and is the judge. The reply is an invite: a `https://t.me/<bot>?start=<token>` link, and an `imitation://join/<token>` line for the iPhone app. Send it to the other player. The first to join becomes the witness; anyone joining after watches.
+
+**On Telegram**, DM the bot. To start, send `/start`; to join, tap the invite's `t.me` link.
+
+**In a terminal**, from this checkout:
+
+```bash
+npm run dev terminal [name]
+```
+
+It plays on the deployed server (`wss://imitation.rvanegas.co/ws`). The first run on a machine asks for a link code: send `/link` to the bot on Telegram and type the code it replies with at the `link code>` prompt. The bot's reply says to enter it in the iPhone app; the terminal takes it too. A code works once and expires after ten minutes. The token that comes back is kept in `terminal-tokens.json`, so later runs sign straight in. Then `/start` starts a game, and `/start <token>` joins one, with the token from the invite.
+
+**Linking makes the terminal that Telegram account.** Two players linked to the same account are one player, and the server refuses a player's own invite. The terminal player links a different Telegram account from the one the other player is on.
+
+**In a game**, the judge writes first and receives two replies, A and B, one from the witness and one from the model; `/a` or `/b` (or `/human A|B`) calls which is human. `/status`, `/invite`, `/leave` and `/help` work from either side.
+
+---
+
 ## Architecture
 
 **Transport layer**: Three transport implementations with priority-based fallback — Telegram bot API, WebSocket server, and Unix socket. The same game logic runs over any of them. A React Native iOS client provides a native mobile interface.
