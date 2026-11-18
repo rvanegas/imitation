@@ -44,3 +44,35 @@ describe('the WebSocket server\'s HTTP side', () => {
     expect(reply.text).toMatch(/Authenticate first/);
   });
 });
+
+describe('WebSocketTransport', () => {
+  // A stand-in socket: send() records frames; readyState is OPEN.
+  function fakeSocket(): { ws: WebSocket; sent: string[] } {
+    const sent: string[] = [];
+    const ws = { readyState: WebSocket.OPEN, send: (s: string) => { sent.push(s); } } as unknown as WebSocket;
+    return { ws, sent };
+  }
+
+  it('keeps a newer connection when the older one for the same player closes', async () => {
+    const transport = new WebSocketTransport();
+    const older = fakeSocket();
+    const newer = fakeSocket();
+    transport.register(7, older.ws);
+    transport.register(7, newer.ws);
+
+    transport.unregister(7, older.ws);
+    await transport.send(7, 'still here');
+
+    expect(transport.has(7)).toBe(true);
+    expect(newer.sent).toHaveLength(1);
+    expect(older.sent).toHaveLength(0);
+  });
+
+  it('forgets a player whose only connection closes', () => {
+    const transport = new WebSocketTransport();
+    const only = fakeSocket();
+    transport.register(7, only.ws);
+    transport.unregister(7, only.ws);
+    expect(transport.has(7)).toBe(false);
+  });
+});

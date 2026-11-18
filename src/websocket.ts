@@ -18,8 +18,10 @@ export class WebSocketTransport implements Transport {
     this.sockets.set(userId, ws);
   }
 
-  unregister(userId: UserId): void {
-    this.sockets.delete(userId);
+  // Only if it is still this socket: when a player connects again before the
+  // old connection closes, the old one's close must not take the new one out.
+  unregister(userId: UserId, ws: WebSocket): void {
+    if (this.sockets.get(userId) === ws) this.sockets.delete(userId);
   }
 
   has(userId: UserId): boolean {
@@ -168,8 +170,8 @@ export function startWebSocketServer(
       }
     });
 
-    ws.on('close', () => { if (userId !== null) transport.unregister(userId); });
-    ws.on('error', () => { if (userId !== null) transport.unregister(userId); });
+    ws.on('close', () => { if (userId !== null) transport.unregister(userId, ws); });
+    ws.on('error', () => { if (userId !== null) transport.unregister(userId, ws); });
   });
 
   console.log(`WebSocket server listening on ${WS_HOST ?? '*'}:${port}`);
