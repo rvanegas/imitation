@@ -26,6 +26,7 @@ npm run dev server --no-telegram  # Run server without Telegram (socket only)
 npm run dev server -t           # Same as --no-telegram
 npm run dev terminal [name]     # Play on the deployed server; the first run links to Telegram via /link
 npm run dev terminal -l <name>  # Play on a local server, over its socket, as <name>
+npm run dev leaderboard         # Print the deployed server's leaderboard (GET /leaderboard)
 npm run build                   # Compile TypeScript to dist/
 npm run start                   # Run compiled output from dist/
 cd app && npx expo start        # Run Expo dev server (./app)

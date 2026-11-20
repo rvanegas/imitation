@@ -37,6 +37,8 @@ npm run dev terminal [name]
 
 It plays on the deployed server (`wss://imitation.rvanegas.co/ws`). The first run on a machine asks for a link code: send `/link` to the bot on Telegram and type the code it replies with at the `link code>` prompt. The bot's reply says to enter it in the iPhone app; the terminal takes it too. A code works once and expires after ten minutes. The token that comes back is kept in `terminal-tokens.json`, so later runs sign straight in. Then `/start` starts a game, and `/start <token>` joins one, with the token from the invite.
 
+**The leaderboard**, without signing in or starting a game: `npm run dev leaderboard` prints the deployed server's top ten, the list `/leaderboard` shows in a game.
+
 **Linking makes the terminal that Telegram account.** Two players linked to the same account are one player, and the server refuses a player's own invite. The terminal player links a different Telegram account from the one the other player is on.
 
 **In a game**, the judge writes first and receives two replies, A and B, one from the witness and one from the model; `/a` or `/b` (or `/human A|B`) calls which is human. `/status`, `/invite`, `/leave` and `/help` work from either side.

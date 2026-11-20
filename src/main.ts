@@ -4,7 +4,7 @@ diagProcessStart();
 const [,, cmd, ...args] = process.argv;
 
 function usage(): never {
-  console.error('Usage: npm run dev <server [--no-telegram|-t] | terminal [--local|-l] [name] | costs [--by-session|-s] | sessions | experiment <name>>');
+  console.error('Usage: npm run dev <server [--no-telegram|-t] | terminal [--local|-l] [name] | leaderboard | costs [--by-session|-s] | sessions | experiment <name>>');
   process.exit(1);
 }
 
@@ -26,6 +26,11 @@ switch (cmd) {
     }
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     require('./client').start(name ?? 'default', local);
+    break;
+  }
+  case 'leaderboard': {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require('./leaderboard').showLeaderboard();
     break;
   }
   case 'costs': {

@@ -8,6 +8,7 @@ import { GameEvent } from './events';
 import { UserId } from './types';
 import { getName, getOrAssignName, createAnonymousUser, setWsToken, getUserIdByWsToken } from './userProfiles';
 import { isValidSessionToken } from './session';
+import { leaderboardText } from './engine';
 import { consumeLinkToken } from './linkTokens';
 import { friendlyApiError } from './apiError';
 
@@ -55,14 +56,20 @@ function deployed(): Record<string, unknown> {
   }
 }
 
-// Plain HTTP on the same port answers GET /healthz with the deployed commit;
-// every other plain request is a 404. A WebSocket upgrade on any path is the
+// Plain HTTP on the same port answers GET /healthz with the deployed commit
+// and GET /leaderboard with the leaderboard's text, for `imitation
+// leaderboard`, which needs no sign-in; every other plain request is a 404. A WebSocket upgrade on any path is the
 // game, so the app's wss://imitation.rvanegas.co/ws and a bare ws://host:8080
 // both connect.
 function handleHttp(req: http.IncomingMessage, res: http.ServerResponse): void {
   if (req.method === 'GET' && req.url === '/healthz') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, ...deployed() }));
+    return;
+  }
+  if (req.method === 'GET' && req.url === '/leaderboard') {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end(leaderboardText() + '\n');
     return;
   }
   res.writeHead(404);

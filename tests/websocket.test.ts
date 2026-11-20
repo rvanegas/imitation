@@ -3,6 +3,7 @@ import * as http from 'http';
 import { AddressInfo } from 'net';
 import { WebSocket } from 'ws';
 import { WebSocketTransport, startWebSocketServer } from '../src/websocket';
+import { leaderboardUrl } from '../src/leaderboard';
 
 let server: http.Server | null = null;
 
@@ -23,6 +24,19 @@ describe('the WebSocket server\'s HTTP side', () => {
     const res = await fetch(`http://127.0.0.1:${port}/healthz`);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, commit: 'dev' });
+  });
+
+  it('answers /leaderboard with its text, without a sign-in', async () => {
+    const port = await start();
+    const res = await fetch(`http://127.0.0.1:${port}/leaderboard`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toMatch(/^text\/plain/);
+    expect(await res.text()).toMatch(/^(Leaderboard — Top players|No leaderboard data yet)/);
+  });
+
+  it('reads the leaderboard from the host the terminal plays on', () => {
+    expect(leaderboardUrl('wss://imitation.rvanegas.co/ws')).toBe('https://imitation.rvanegas.co/leaderboard');
+    expect(leaderboardUrl('ws://127.0.0.1:8080')).toBe('http://127.0.0.1:8080/leaderboard');
   });
 
   it('404s any other plain request', async () => {

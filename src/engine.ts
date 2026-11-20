@@ -400,18 +400,23 @@ export async function handleResync(userId: UserId, transport: Transport): Promis
   await transport.send(userId, '', buildSync(s, userId));
 }
 
-export async function handleLeaderboard(userId: UserId, transport: Transport): Promise<void> {
-  const entries = getLeaderboard(10);
-  if (entries.length === 0) {
-    await transport.send(userId, 'No leaderboard data yet — play some rounds first!');
-    return;
-  }
-  const structured = leaderboardEntries(10);
+// The leaderboard as /leaderboard prints it, which GET /leaderboard serves too.
+export function leaderboardText(entries: LeaderboardEntry[] = leaderboardEntries(10)): string {
+  if (entries.length === 0) return 'No leaderboard data yet — play some rounds first!';
   const lines: string[] = ['Leaderboard — Top players\n'];
-  structured.forEach(e => {
+  entries.forEach(e => {
     lines.push(`${e.rank}. ${e.name}  W:${e.wins} L:${e.losses} (${e.pct}%)  Streak: ${e.bestStreak}`);
   });
-  await transport.send(userId, lines.join('\n'), { kind: 'leaderboard', entries: structured });
+  return lines.join('\n');
+}
+
+export async function handleLeaderboard(userId: UserId, transport: Transport): Promise<void> {
+  const structured = leaderboardEntries(10);
+  if (structured.length === 0) {
+    await transport.send(userId, leaderboardText(structured));
+    return;
+  }
+  await transport.send(userId, leaderboardText(structured), { kind: 'leaderboard', entries: structured });
 }
 
 export async function handleSetName(userId: UserId, name: string, transport: Transport): Promise<void> {
