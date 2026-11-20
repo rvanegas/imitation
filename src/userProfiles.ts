@@ -229,7 +229,8 @@ export function appendMessage(userId: UserId, partnerId: UserId, message: string
   while (msgs.reduce((n, m) => n + Buffer.byteLength(m, 'utf8'), 0) > MAX_BYTES_PER_USER) {
     msgs.shift();
   }
-  store.pairs[key] = { messages: msgs };
+  // The same key holds the pair's stats when userId is the lower of the two.
+  store.pairs[key] = { ...store.pairs[key], messages: msgs };
   saveStore(store);
 }
 
@@ -260,6 +261,21 @@ export function recordRoundResult(user1: UserId, user2: UserId, won: boolean, cu
     },
   };
   saveStore(store);
+}
+
+// Replaces the stats of each pair given, for the pairs whose players both
+// still have profiles; `src/rebuildStats.ts` rebuilds them from the logs.
+export function replacePairStats(stats: Record<string, UserStats>): string[] {
+  const store = loadStore();
+  const replaced: string[] = [];
+  for (const [key, s] of Object.entries(stats)) {
+    const [a, b] = key.split(':');
+    if (!store.users[a] || !store.users[b]) continue;
+    store.pairs[key] = { ...(store.pairs[key] ?? { messages: [] }), stats: s };
+    replaced.push(key);
+  }
+  saveStore(store);
+  return replaced;
 }
 
 export interface LeaderboardEntry {
