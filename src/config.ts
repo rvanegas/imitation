@@ -64,7 +64,7 @@ export const WS_PORT = wsUrl ? (parseInt(new URL(wsUrl).port) || 8080) : 8080;
 export const WS_HOST = raw.websocket?.host;
 // The server `imitation terminal` connects to unless told --local: the one
 // deployed on the commons box.
-export const SERVER_URL = raw.terminal?.server ?? 'wss://imitation.rvanegas.co/ws';
+export const SERVER_URL = raw.terminal?.server ?? 'wss://imitation.twohands.co/ws';
 
 // Per-model pricing table. Keys are model IDs as recorded in cost-audit.jsonl.
 export const PRICING: Record<string, { inputPerMillion: number; outputPerMillion: number; cacheWritePerMillion: number; cacheReadPerMillion: number }> = {};

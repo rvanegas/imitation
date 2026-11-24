@@ -35,7 +35,7 @@ describe('the WebSocket server\'s HTTP side', () => {
   });
 
   it('reads the leaderboard from the host the terminal plays on', () => {
-    expect(leaderboardUrl('wss://imitation.rvanegas.co/ws')).toBe('https://imitation.rvanegas.co/leaderboard');
+    expect(leaderboardUrl('wss://imitation.twohands.co/ws')).toBe('https://imitation.twohands.co/leaderboard');
     expect(leaderboardUrl('ws://127.0.0.1:8080')).toBe('http://127.0.0.1:8080/leaderboard');
   });
 

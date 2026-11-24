@@ -31,7 +31,7 @@
       "expo-secure-store"
     ],
     "extra": {
-      "serverUrl": "wss://imitation.rvanegas.co/ws"
+      "serverUrl": "wss://imitation.twohands.co/ws"
     }
   }
 }

@@ -27,7 +27,7 @@ base_url = "http://localhost:11434/v1"
 
 [terminal]
 # The server `imitation terminal` connects to; --local uses the socket above.
-# server = "wss://imitation.rvanegas.co/ws"
+# server = "wss://imitation.twohands.co/ws"
 
 # USD per million tokens, keyed by model ID — verify at https://anthropic.com/pricing
 [pricing."claude-sonnet-5-5"]

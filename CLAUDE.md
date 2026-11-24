@@ -45,7 +45,7 @@ Requires `~/.config/imitation/config.toml` (see `config.toml.example`):
 - `[anthropic] model` — model ID (default: `claude-sonnet-4-6`)
 - `[ollama] model` / `[ollama] base_url` — Ollama settings
 - `[socket] path` — override the Unix socket path
-- `[terminal] server` — the server `imitation terminal` plays on (default: `wss://imitation.rvanegas.co/ws`)
+- `[terminal] server` — the server `imitation terminal` plays on (default: `wss://imitation.twohands.co/ws`)
 
 XDG directories are respected (`XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_RUNTIME_DIR`).
 

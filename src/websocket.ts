@@ -59,7 +59,7 @@ function deployed(): Record<string, unknown> {
 // Plain HTTP on the same port answers GET /healthz with the deployed commit
 // and GET /leaderboard with the leaderboard's text, for `imitation
 // leaderboard`, which needs no sign-in; every other plain request is a 404. A WebSocket upgrade on any path is the
-// game, so the app's wss://imitation.rvanegas.co/ws and a bare ws://host:8080
+// game, so the app's wss://imitation.twohands.co/ws and a bare ws://host:8080
 // both connect.
 function handleHttp(req: http.IncomingMessage, res: http.ServerResponse): void {
   if (req.method === 'GET' && req.url === '/healthz') {
